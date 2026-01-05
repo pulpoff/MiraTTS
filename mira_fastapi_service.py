@@ -87,32 +87,38 @@ def discover_voices() -> Dict:
     return dict(sorted(voices.items()))
 
 AVAILABLE_VOICES = discover_voices()
+DEFAULT_VOICE = list(AVAILABLE_VOICES.keys())[0] if AVAILABLE_VOICES else None
 
-# Lazy initialization - model will be created on first request
+# Global model instance - will be initialized at startup
 MIRA_TTS = None
 
-def get_mira_tts():
-    """Lazy initialization of MiraTTS model"""
+def initialize_model():
+    """Initialize MiraTTS model at startup"""
     global MIRA_TTS
-    if MIRA_TTS is None:
-        import torch.multiprocessing as mp
-        try:
-            mp.set_start_method('spawn', force=True)
-        except RuntimeError:
-            pass
+    import torch.multiprocessing as mp
+    try:
+        mp.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass
 
-        print("Initializing MiraTTS model...")
-        MIRA_TTS = MiraTTSStreaming(
-            model_dir="YatharthS/MiraTTS",
-            tp=1,
-            enable_prefix_caching=True,
-            cache_max_entry_count=0.5
-        )
-        print("✓ Model initialized")
+    print("Initializing MiraTTS model...")
+    MIRA_TTS = MiraTTSStreaming(
+        model_dir="YatharthS/MiraTTS",
+        tp=1,
+        enable_prefix_caching=True,
+        cache_max_entry_count=0.5
+    )
+    print("✓ Model initialized")
 
+    # Pre-cache default voice for low latency
+    if DEFAULT_VOICE:
+        print(f"Pre-caching default voice: {DEFAULT_VOICE}")
+        get_voice_context(DEFAULT_VOICE)
+        print(f"✓ Default voice ready")
+
+def get_mira_tts():
+    """Get the initialized MiraTTS model"""
     return MIRA_TTS
-
-DEFAULT_VOICE = list(AVAILABLE_VOICES.keys())[0] if AVAILABLE_VOICES else None
 
 voice_context_cache = {}
 
@@ -151,6 +157,11 @@ app = FastAPI(
     description=f"High-performance Text-to-Speech API using MiraTTS with {len(AVAILABLE_VOICES)} reference voices. Real chunked streaming via LMDeploy.",
     version="2.0.0"
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize model and default voice at startup for low latency"""
+    initialize_model()
 
 logging.basicConfig(format="%(message)s", level=logging.INFO)
 logging.getLogger('uvicorn').setLevel(logging.INFO)
@@ -254,10 +265,13 @@ def generate_mira_audio(text: str, voice: str):
     audio_tensor = mira_tts.generate(text, context_tokens, reference_text=reference_text)
 
     audio_numpy = audio_tensor.cpu().numpy() if isinstance(audio_tensor, torch.Tensor) else audio_tensor
-    total_time = time.time() - start_time
-    print(f"✓ {voice}: Non-streaming Total={total_time:.2f}s")
+    audio_numpy = audio_numpy.flatten() if audio_numpy.ndim > 1 else audio_numpy
 
-    return audio_numpy.flatten() if audio_numpy.ndim > 1 else audio_numpy
+    total_time = time.time() - start_time
+    audio_duration_sec = len(audio_numpy) / MIRA_OUTPUT_SAMPLE_RATE
+    print(f"✓ {voice}: Non-streaming Total={total_time:.2f}s Audio={audio_duration_sec:.2f}s Samples={len(audio_numpy):,}")
+
+    return audio_numpy
 
 def run_non_streaming_inference(prompt: str, voice: str,
                                tempo: float = TEMPO_FACTOR,
@@ -434,7 +448,10 @@ async def async_streaming_generator(prompt: str, voice: str,
 
         if chunk_count > 0 and total_bytes > 0:
             total_time = time.time() - request_start
-            print(f"✓ {voice}: TTFT={first_chunk_time:.3f}s Total={total_time:.2f}s Chunks={chunk_count} Bytes={total_bytes:,}")
+            audio_duration_sec = total_bytes / (FINAL_SAMPLE_RATE * 2)  # 16kHz, 16-bit = 2 bytes per sample
+            print(f"✓ {voice}: TTFT={first_chunk_time:.3f}s Total={total_time:.2f}s Audio={audio_duration_sec:.2f}s Chunks={chunk_count} Bytes={total_bytes:,}")
+        else:
+            print(f"⚠️  {voice}: No audio generated! Input text may be empty or encoding failed.")
 
     except Exception as e:
         print(f"✗ Error in streaming generator after {chunk_count} chunks: {e}")
