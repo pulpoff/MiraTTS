@@ -1,5 +1,8 @@
-# Core dependencies for MiraTTS
-# Note: ncodec is included in the MiraTTS package installation
+# IMPORTANT: Install MiraTTS package FIRST with:
+#   pip install -e .
+# This will install ncodec and other core dependencies automatically
+
+# LMDeploy and dependencies
 # Note: torch/torchaudio/torchvision versions managed by lmdeploy
 lmdeploy>=0.2.0
 omegaconf>=2.0.0

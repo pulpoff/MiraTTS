@@ -28,3 +28,6 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/ysharma3501/MiraTTS"
 Issues = "https://github.com/ysharma3501/MiraTTS/issues"
+
+[tool.setuptools]
+packages = ["mira"]

@@ -116,7 +116,12 @@ class MiraTTSStreaming:
             # Generate full audio for this chunk
             formatted_prompt = self.codec.format_prompt(text_chunk, context_tokens, reference_text)
             response = self.pipe([formatted_prompt], gen_config=self.gen_config, do_preprocess=False)
-            audio = self.codec.decode(response[0].text, context_tokens)
+
+            # Debug: Check what was generated
+            generated_text = response[0].text
+            print(f"🔍 Generated tokens (len={len(generated_text)}): {generated_text[:100]}...")
+
+            audio = self.codec.decode(generated_text, context_tokens)
 
             if not isinstance(audio, torch.Tensor) or audio.numel() == 0:
                 print(f"⚠️  Chunk {i+1}: No audio generated")
