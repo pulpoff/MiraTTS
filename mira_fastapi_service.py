@@ -74,44 +74,47 @@ def discover_voices() -> Dict:
 
 AVAILABLE_VOICES = discover_voices()
 
-print("\n" + "="*60)
-print("Initializing MiraTTS Pipeline")
-print("="*60)
+# Lazy initialization - model will be created on first request
+MIRA_TTS = None
 
-if not AVAILABLE_VOICES:
-    print("❌ WARNING: No reference audio files found!")
-    print(f"Voice directory: {VOICES_DIR}")
-    print("Service will start but TTS will fail without reference audio files.")
+def get_mira_tts():
+    """Lazy initialization of MiraTTS model"""
+    global MIRA_TTS
+    if MIRA_TTS is None:
+        import torch.multiprocessing as mp
+        try:
+            mp.set_start_method('spawn', force=True)
+        except RuntimeError:
+            pass
 
-try:
-    MIRA_TTS = MiraTTSStreaming(
-        model_dir="YatharthS/MiraTTS",
-        tp=1,
-        enable_prefix_caching=True,
-        cache_max_entry_count=0.5
-    )
-    print(f"✓ MiraTTS initialized")
-    print(f"  Model: YatharthS/MiraTTS")
-    print(f"  Output sample rate: {MIRA_OUTPUT_SAMPLE_RATE}Hz")
-    print(f"  Device: {device}")
+        print("\n" + "="*60)
+        print("Initializing MiraTTS Pipeline")
+        print("="*60)
 
-    if AVAILABLE_VOICES:
-        print(f"\nFound {len(AVAILABLE_VOICES)} reference voice(s):")
-        for voice_id in sorted(AVAILABLE_VOICES.keys()):
-            voice_info = AVAILABLE_VOICES[voice_id]
-            print(f"  • {voice_id}: {voice_info['name']} ({voice_info['format']}, {voice_info['file_size_mb']}MB)")
+        MIRA_TTS = MiraTTSStreaming(
+            model_dir="YatharthS/MiraTTS",
+            tp=1,
+            enable_prefix_caching=True,
+            cache_max_entry_count=0.5
+        )
+        print(f"✓ MiraTTS initialized")
+        print(f"  Model: YatharthS/MiraTTS")
+        print(f"  Output sample rate: {MIRA_OUTPUT_SAMPLE_RATE}Hz")
+        print(f"  Device: {device}")
 
-except Exception as e:
-    print(f"✗ Failed to initialize MiraTTS: {e}")
-    import traceback
-    traceback.print_exc()
-    exit(1)
+        if AVAILABLE_VOICES:
+            print(f"\nFound {len(AVAILABLE_VOICES)} reference voice(s):")
+            for voice_id in sorted(AVAILABLE_VOICES.keys()):
+                voice_info = AVAILABLE_VOICES[voice_id]
+                print(f"  • {voice_id}: {voice_info['name']} ({voice_info['format']}, {voice_info['file_size_mb']}MB)")
+
+            default_voice = list(AVAILABLE_VOICES.keys())[0]
+            print(f"\nDefault voice: {default_voice}")
+        print("="*60)
+
+    return MIRA_TTS
 
 DEFAULT_VOICE = list(AVAILABLE_VOICES.keys())[0] if AVAILABLE_VOICES else None
-
-if DEFAULT_VOICE:
-    print(f"\nDefault voice: {DEFAULT_VOICE}")
-print("="*60)
 
 voice_context_cache = {}
 
@@ -121,7 +124,8 @@ def get_voice_context(voice_id: str):
             raise ValueError(f"Voice '{voice_id}' not found")
         voice_path = AVAILABLE_VOICES[voice_id]['path']
         print(f"Encoding reference audio: {voice_id}")
-        voice_context_cache[voice_id] = MIRA_TTS.encode_audio(voice_path)
+        mira_tts = get_mira_tts()
+        voice_context_cache[voice_id] = mira_tts.encode_audio(voice_path)
         print(f"✓ Cached context tokens for {voice_id}")
     return voice_context_cache[voice_id]
 
@@ -238,8 +242,9 @@ def generate_mira_audio(text: str, voice: str):
     global voice_usage_stats
     voice_usage_stats[voice] = voice_usage_stats.get(voice, 0) + 1
 
+    mira_tts = get_mira_tts()
     context_tokens = get_voice_context(voice)
-    audio_tensor = MIRA_TTS.generate(text, context_tokens, reference_text=reference_text)
+    audio_tensor = mira_tts.generate(text, context_tokens, reference_text=reference_text)
 
     audio_numpy = audio_tensor.cpu().numpy() if isinstance(audio_tensor, torch.Tensor) else audio_tensor
     return audio_numpy.flatten() if audio_numpy.ndim > 1 else audio_numpy
@@ -352,10 +357,11 @@ async def async_streaming_generator(prompt: str, voice: str,
     temp_files = []
 
     try:
+        mira_tts = get_mira_tts()
         context_tokens = get_voice_context(voice)
 
         async for audio_chunk in asyncio_wrap_generator(
-            MIRA_TTS.stream_generate(prompt, context_tokens, chunk_size=STREAMING_CHUNK_SIZE, reference_text=reference_text)
+            mira_tts.stream_generate(prompt, context_tokens, chunk_size=STREAMING_CHUNK_SIZE, reference_text=reference_text)
         ):
             if audio_chunk is None or audio_chunk.size == 0:
                 continue
