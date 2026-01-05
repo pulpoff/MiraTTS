@@ -31,9 +31,9 @@ MIRA_OUTPUT_SAMPLE_RATE = 48000  # MiraTTS generates 48kHz audio
 STREAMING_CHUNK_SIZE = 50  # Number of tokens to accumulate before decoding (lower = faster, higher = more efficient)
 
 # --- Voice Directory (Reference Audio Files) ---
-VOICES_DIR = Path("/voices")
+VOICES_DIR = Path("/ref")
 if not VOICES_DIR.exists():
-    VOICES_DIR = Path("./voices")
+    VOICES_DIR = Path("./ref")
 
 print(f"Using voice directory: {VOICES_DIR.absolute()}")
 
