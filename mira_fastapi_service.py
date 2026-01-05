@@ -17,7 +17,7 @@ import warnings
 import numpy as np
 import scipy.io.wavfile as wav
 
-from mira.model import MiraTTS
+from mira.streaming_model import MiraTTSStreaming
 from mira.utils import split_text
 
 warnings.filterwarnings('ignore')
@@ -28,6 +28,7 @@ TEMPO_FACTOR = 1.1
 MASTER_VOLUME_GAIN = 0.8
 DEFAULT_SPEED = 1.0  # MiraTTS doesn't have speed parameter like Kokoro
 MIRA_OUTPUT_SAMPLE_RATE = 48000  # MiraTTS generates 48kHz audio
+STREAMING_CHUNK_SIZE = 50  # Number of tokens to accumulate before decoding (lower = faster, higher = more efficient)
 
 # --- Voice Directory (Reference Audio Files) ---
 VOICES_DIR = Path("/voices")
@@ -84,8 +85,8 @@ if not AVAILABLE_VOICES:
 
 # Initialize MiraTTS
 try:
-    # Optimize for streaming with smaller cache
-    MIRA_TTS = MiraTTS(
+    # Use streaming-enabled MiraTTS
+    MIRA_TTS = MiraTTSStreaming(
         model_dir="YatharthS/MiraTTS",
         tp=1,  # Tensor parallelism (increase if multiple GPUs)
         enable_prefix_caching=True,
@@ -151,8 +152,8 @@ def get_voice_info(voice_id: str) -> Dict:
 # --- FastAPI Setup ---
 app = FastAPI(
     title="MiraTTS FastAPI Server",
-    description=f"High-performance Text-to-Speech API using MiraTTS with {len(AVAILABLE_VOICES)} reference voices. Streaming-enabled.",
-    version="1.0.0"
+    description=f"High-performance Text-to-Speech API using MiraTTS with {len(AVAILABLE_VOICES)} reference voices. Real chunked streaming via LMDeploy.",
+    version="2.0.0"  # Real chunked streaming
 )
 
 logging.basicConfig(format="%(message)s", level=logging.INFO)
@@ -281,44 +282,6 @@ def generate_mira_audio(text: str, voice: str):
 
     return audio_numpy
 
-def generate_mira_audio_chunks(text: str, voice: str):
-    """Generate audio chunks by splitting text into sentences."""
-    if not validate_voice(voice):
-        raise ValueError(f"Voice '{voice}' is not available.")
-
-    # Get context tokens (cached)
-    context_tokens = get_voice_context(voice)
-
-    # Split text into sentences for streaming
-    sentences = split_text(text)
-
-    if not sentences:
-        sentences = [text]
-
-    print(f"Split text into {len(sentences)} sentence(s) for streaming")
-
-    for i, sentence in enumerate(sentences):
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-
-        print(f"  Processing sentence {i+1}/{len(sentences)}: {sentence[:50]}...")
-
-        # Generate audio for this sentence
-        audio_tensor = MIRA_TTS.generate(sentence, context_tokens)
-
-        # Convert tensor to numpy array
-        if isinstance(audio_tensor, torch.Tensor):
-            audio_numpy = audio_tensor.cpu().numpy()
-        else:
-            audio_numpy = audio_tensor
-
-        # Ensure it's 1D
-        if audio_numpy.ndim > 1:
-            audio_numpy = audio_numpy.flatten()
-
-        yield audio_numpy
-
 # --- Non-Streaming Helper ---
 def run_non_streaming_inference(prompt: str, voice: str,
                                tempo: float = TEMPO_FACTOR,
@@ -411,13 +374,22 @@ async def generate_audio_endpoint(request: TTSRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- Async Helper for Generators ---
+async def asyncio_wrap_generator(sync_generator):
+    """Wrap a synchronous generator to work with async for loops"""
+    for item in sync_generator:
+        yield item
+        # Allow other async tasks to run
+        await asyncio.sleep(0)
+
 async def async_streaming_generator(prompt: str, voice: str,
                                    tempo: float = TEMPO_FACTOR,
                                    volume: float = MASTER_VOLUME_GAIN):
     """
     Async generator for streaming TTS output.
 
-    Splits text into sentences and generates/streams each sentence separately.
+    Uses real chunked streaming from LMDeploy - generates and yields audio
+    chunks as tokens are produced, providing minimal latency.
     """
     global request_count
     request_count += 1
@@ -426,7 +398,7 @@ async def async_streaming_generator(prompt: str, voice: str,
         raise ValueError(f"Voice '{voice}' is not available.")
 
     voice_info = AVAILABLE_VOICES[voice]
-    print(f"Streaming TTS with voice: {voice} ({voice_info['name']})")
+    print(f"Streaming TTS with voice: {voice} ({voice_info['name']}) [Real chunked streaming]")
 
     chunk_count = 0
     total_bytes = 0
@@ -434,8 +406,14 @@ async def async_streaming_generator(prompt: str, voice: str,
     temp_files = []
 
     try:
-        # Generate audio chunks from MiraTTS (sentence by sentence)
-        for i, audio_chunk in enumerate(generate_mira_audio_chunks(prompt, voice)):
+        # Get cached context tokens
+        context_tokens = get_voice_context(voice)
+
+        # Generate audio chunks from MiraTTS using real token-level streaming
+        async for audio_chunk in asyncio_wrap_generator(
+            MIRA_TTS.stream_generate(prompt, context_tokens, chunk_size=STREAMING_CHUNK_SIZE)
+        ):
+            i = chunk_count
             if audio_chunk is None or audio_chunk.size == 0:
                 continue
 
@@ -712,7 +690,7 @@ async def health_check():
             'cached_voices': len(voice_context_cache),
             'default_voice': DEFAULT_VOICE,
             'voices_directory': str(VOICES_DIR),
-            'service': 'MiraTTS FastAPI Server v1.0.0'
+            'service': 'MiraTTS FastAPI Server v2.0.0 (Real Chunked Streaming)'
         }
 
         if torch.cuda.is_available():
@@ -736,7 +714,7 @@ async def root():
     """Root endpoint with service information."""
     return {
         'service': 'MiraTTS FastAPI Server',
-        'version': '1.0.0',
+        'version': '2.0.0',
         'description': 'High-performance Text-to-Speech service using MiraTTS with streaming support',
         'model': 'YatharthS/MiraTTS',
         'total_voices': len(AVAILABLE_VOICES),
@@ -745,7 +723,7 @@ async def root():
         'output_quality': '48kHz high-quality audio (downsampled to 16kHz for output)',
         'features': [
             'Voice cloning via reference audio files',
-            'Streaming support via text chunking',
+            'Real chunked streaming (token-level with LMDeploy)',
             'Low latency inference (~100ms)',
             'High quality 48kHz audio generation',
             'Voice context caching for performance',
@@ -783,7 +761,7 @@ if __name__ == "__main__":
         print("!" * 60)
 
     print("\n" + "="*60)
-    print("MIRATTS FASTAPI SERVER v1.0.0")
+    print("MIRATTS FASTAPI SERVER v2.0.0 (Real Chunked Streaming)")
     print("="*60)
     print(f"Device: {device}")
     print(f"Model: YatharthS/MiraTTS")
@@ -792,7 +770,7 @@ if __name__ == "__main__":
         print(f"Default voice: {DEFAULT_VOICE}")
     print(f"Voice directory: {VOICES_DIR}")
     print(f"Output sample rate: {MIRA_OUTPUT_SAMPLE_RATE}Hz -> {FINAL_SAMPLE_RATE}Hz")
-    print(f"Streaming: Text chunking by sentences")
+    print(f"Streaming: Real chunked streaming (token-level, chunk_size={STREAMING_CHUNK_SIZE})")
     print(f"Listening on: http://0.0.0.0:5100")
     print(f"Docs available at: http://0.0.0.0:5100/docs")
     print("="*60)
