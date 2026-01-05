@@ -24,14 +24,52 @@ https://github.com/user-attachments/assets/262088ae-068a-49f2-8ad6-ab32c66dcd17
 
 ## Installation
 
-Simple 1 line installation:
+### Quick Install (Library Only)
+
 ```bash
 pip install git+https://github.com/ysharma3501/MiraTTS.git
 ```
 
-For the FastAPI service, also install:
+### Full Install (with FastAPI Service)
+
+**Option 1: From repository**
 ```bash
-pip install fastapi uvicorn scipy psutil
+# Clone the repository
+git clone https://github.com/pulpoff/MiraTTS.git
+cd MiraTTS
+
+# Install all dependencies
+pip install -r requirements.txt
+
+# Also install MiraTTS package
+pip install git+https://github.com/ysharma3501/MiraTTS.git
+```
+
+**Option 2: Manual dependencies**
+```bash
+# Install MiraTTS
+pip install git+https://github.com/ysharma3501/MiraTTS.git
+
+# Install service dependencies
+pip install fastapi uvicorn scipy psutil gunicorn
+```
+
+### System Requirements
+
+- Python 3.8+
+- CUDA-capable GPU (recommended, 6GB+ VRAM)
+- FFmpeg (required for audio processing)
+
+**Install FFmpeg:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install ffmpeg
+
+# macOS
+brew install ffmpeg
+
+# Windows
+# Download from https://ffmpeg.org/download.html
 ```
 
 ## Usage
