@@ -53,73 +53,53 @@ class MiraTTSStreaming:
         return self.codec.decode(response[0].text, context_tokens)
 
     def stream_generate(self, text, context_tokens, chunk_size=50, reference_text=None):
-        """Stream audio chunks as tokens are generated
+        """Simulated streaming by generating full audio then chunking
+
+        NOTE: LMDeploy's stream_infer is not compatible with MiraTTS model.
+        This uses standard generation and yields audio in chunks for streaming UX.
 
         Args:
             text: Text to synthesize
             context_tokens: Encoded reference audio
-            chunk_size: Tokens to accumulate before decoding (lower=faster, higher=efficient)
+            chunk_size: Audio chunk size in samples (not tokens)
             reference_text: Transcript of reference audio
         """
-        formatted_prompt = self.codec.format_prompt(text, context_tokens, reference_text)
-        print(f"🔍 DEBUG: Input text='{text[:50]}...' ref_text='{reference_text[:30] if reference_text else None}'")
+        import re
 
-        accumulated_tokens = ""
-        previous_audio_length = 0
-        tokens_since_decode = 0
-        iteration_count = 0
-        total_tokens_generated = 0
+        # Split text into sentences for progressive generation
+        sentences = re.split(r'([.!?]+)', text)
+        sentences = [''.join(sentences[i:i+2]) for i in range(0, len(sentences)-1, 2)]
+        if len(sentences) == 0:
+            sentences = [text]
 
-        for response in self.pipe.stream_infer([formatted_prompt], gen_config=self.gen_config, do_preprocess=False):
-            iteration_count += 1
+        print(f"🔍 Streaming {len(sentences)} sentence(s), chunk_size={chunk_size} samples")
 
-            # LMDeploy stream_infer returns FULL accumulated text, but may be unstable
-            # Track growth properly by checking actual content
-            current_text = response.text
+        for i, sentence in enumerate(sentences):
+            if not sentence.strip():
+                continue
 
-            # Only update if we have more tokens than before
-            if len(current_text) > len(accumulated_tokens):
-                prev_length = len(accumulated_tokens)
-                accumulated_tokens = current_text
-                new_tokens = len(accumulated_tokens) - prev_length
-                tokens_since_decode += new_tokens
-                total_tokens_generated += new_tokens
+            # Generate full audio for this sentence
+            formatted_prompt = self.codec.format_prompt(sentence.strip(), context_tokens, reference_text)
+            response = self.pipe([formatted_prompt], gen_config=self.gen_config, do_preprocess=False)
+            audio = self.codec.decode(response[0].text, context_tokens)
 
-                if iteration_count <= 3 or iteration_count % 10 == 0:
-                    print(f"🔍 Iter {iteration_count}: new_tokens={new_tokens}, total={total_tokens_generated}, accumulated_len={len(accumulated_tokens)}")
-            elif iteration_count <= 3 or iteration_count % 10 == 0:
-                print(f"⚠️  Iter {iteration_count}: text shrunk or stayed same (current={len(current_text)}, accumulated={len(accumulated_tokens)})")
+            if not isinstance(audio, torch.Tensor) or audio.numel() == 0:
+                print(f"⚠️  Sentence {i+1}: No audio generated")
+                continue
 
-            should_decode = tokens_since_decode >= chunk_size or response.finish_reason is not None
+            # Yield in chunks for streaming effect
+            audio_flat = audio.flatten()
+            num_samples = audio_flat.shape[0]
+            chunk_samples = chunk_size * 1000  # Convert to actual sample count
 
-            if should_decode and accumulated_tokens:
-                try:
-                    full_audio = self.codec.decode(accumulated_tokens, context_tokens)
+            for start_idx in range(0, num_samples, chunk_samples):
+                end_idx = min(start_idx + chunk_samples, num_samples)
+                chunk = audio_flat[start_idx:end_idx]
 
-                    if isinstance(full_audio, torch.Tensor) and full_audio.numel() > 0:
-                        current_length = full_audio.shape[0]
+                if chunk.numel() > 0:
+                    yield chunk
 
-                        if current_length > previous_audio_length:
-                            new_audio = full_audio[previous_audio_length:]
-                            previous_audio_length = current_length
-                            tokens_since_decode = 0
-
-                            if new_audio.numel() > 0:
-                                print(f"✓ Yielding audio chunk: {new_audio.shape[0]} samples")
-                                yield new_audio
-                        else:
-                            print(f"⚠️  Audio not growing: current={current_length}, prev={previous_audio_length}")
-                    else:
-                        print(f"⚠️  Decoded audio is empty or invalid type")
-                except Exception as e:
-                    print(f"⚠️  Decode error at iteration {iteration_count}: {e}")
-                    continue
-
-            if response.finish_reason is not None:
-                print(f"🏁 Stream finished: iterations={iteration_count}, total_tokens={total_tokens_generated}, finish_reason={response.finish_reason}")
-                if iteration_count == 0 or total_tokens_generated == 0:
-                    print(f"⚠️  Streaming ended with no tokens generated!")
-                break
+            print(f"✓ Sentence {i+1}/{len(sentences)}: {num_samples} samples")
 
     def batch_generate(self, prompts, context_tokens, reference_texts=None):
         """
