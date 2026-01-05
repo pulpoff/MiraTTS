@@ -1,16 +1,17 @@
 import torch
+import re
 from itertools import cycle
 from ncodec.codec import TTSCodec
-from lmdeploy import pipeline, GenerationConfig, TurbomindEngineConfig
+from lmdeploy import pipeline, GenerationConfig, PytorchEngineConfig
 from mira.utils import clear_cache
 
 
 class MiraTTSStreaming:
-    """MiraTTS with real chunked streaming via LMDeploy stream_infer"""
+    """MiraTTS with token-level streaming via PyTorch backend stream_infer"""
 
     def __init__(self, model_dir="YatharthS/MiraTTS", tp=1, enable_prefix_caching=True, cache_max_entry_count=0.2, dtype='bfloat16'):
-        # Use TurboMind backend with same config as base MiraTTS class
-        backend_config = TurbomindEngineConfig(
+        # Use PyTorch backend for stream_infer support
+        backend_config = PytorchEngineConfig(
             cache_max_entry_count=cache_max_entry_count,
             tp=tp,
             dtype=dtype,
@@ -92,39 +93,83 @@ class MiraTTSStreaming:
 
         return chunks if chunks else [text]
 
-    def stream_generate(self, text, context_tokens, chunk_size=25, reference_text=None):
-        """Streaming generation using MeloTTS-style text chunking
+    def stream_generate(self, text, context_tokens, chunk_size=50, reference_text=None):
+        """Token-level streaming generation using PyTorch backend stream_infer
 
-        NOTE: MiraTTS doesn't have native streaming. We chunk the text
-        and generate/stream each chunk sequentially (same as MeloTTS).
+        Attempts true token-level streaming by accumulating tokens and decoding
+        them in chunks. Falls back to text chunking if streaming fails.
 
         Args:
             text: Text to synthesize
             context_tokens: Encoded reference audio
-            chunk_size: Max characters per text chunk (default 150)
+            chunk_size: Number of tokens to accumulate before decoding (default 50)
             reference_text: Transcript of reference audio
         """
-        # Split text into chunks
-        text_chunks = self.split_text_into_chunks(text, max_chunk_length=chunk_size)
+        formatted_prompt = self.codec.format_prompt(text, context_tokens, reference_text)
 
-        for i, text_chunk in enumerate(text_chunks):
-            if not text_chunk.strip():
-                continue
+        try:
+            # Attempt token-level streaming with PyTorch backend
+            accumulated_tokens = []
+            token_count = 0
 
-            # Generate full audio for this chunk
-            formatted_prompt = self.codec.format_prompt(text_chunk, context_tokens, reference_text)
-            response = self.pipe([formatted_prompt], gen_config=self.gen_config, do_preprocess=False)
+            for output in self.pipe.stream_infer([formatted_prompt], gen_config=self.gen_config, do_preprocess=False):
+                token_text = output.text
 
-            generated_text = response[0].text
-            audio = self.codec.decode(generated_text, context_tokens)
+                # Extract new token(s) from output
+                if token_text:
+                    accumulated_tokens.append(token_text)
+                    token_count += 1
 
-            if not isinstance(audio, torch.Tensor) or audio.numel() == 0:
-                print(f"⚠️  Chunk {i+1}: No audio generated")
-                continue
+                    # Decode every chunk_size tokens
+                    if token_count >= chunk_size:
+                        full_token_sequence = ''.join(accumulated_tokens)
 
-            # Yield the complete chunk audio
-            audio_flat = audio.flatten()
-            yield audio_flat
+                        # Check if we have valid speech tokens
+                        if '<|speech_token_' in full_token_sequence:
+                            try:
+                                audio = self.codec.decode(full_token_sequence, context_tokens)
+
+                                if isinstance(audio, torch.Tensor) and audio.numel() > 0:
+                                    yield audio.flatten()
+                                    accumulated_tokens = []
+                                    token_count = 0
+                            except Exception as e:
+                                # Continue accumulating if decode fails
+                                pass
+
+            # Decode remaining tokens
+            if accumulated_tokens:
+                full_token_sequence = ''.join(accumulated_tokens)
+                if '<|speech_token_' in full_token_sequence:
+                    try:
+                        audio = self.codec.decode(full_token_sequence, context_tokens)
+                        if isinstance(audio, torch.Tensor) and audio.numel() > 0:
+                            yield audio.flatten()
+                    except Exception as e:
+                        print(f"⚠️  Failed to decode final tokens: {e}")
+
+        except Exception as e:
+            print(f"⚠️  Token-level streaming failed: {e}")
+            print(f"📋 Falling back to text chunking approach...")
+
+            # Fallback: text chunking approach (MeloTTS-style)
+            text_chunks = self.split_text_into_chunks(text, max_chunk_length=25)
+
+            for i, text_chunk in enumerate(text_chunks):
+                if not text_chunk.strip():
+                    continue
+
+                formatted_prompt = self.codec.format_prompt(text_chunk, context_tokens, reference_text)
+                response = self.pipe([formatted_prompt], gen_config=self.gen_config, do_preprocess=False)
+
+                generated_text = response[0].text
+                audio = self.codec.decode(generated_text, context_tokens)
+
+                if not isinstance(audio, torch.Tensor) or audio.numel() == 0:
+                    print(f"⚠️  Chunk {i+1}: No audio generated")
+                    continue
+
+                yield audio.flatten()
 
     def batch_generate(self, prompts, context_tokens, reference_texts=None):
         """
