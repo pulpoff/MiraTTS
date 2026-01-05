@@ -26,6 +26,11 @@ logging.getLogger('lmdeploy').setLevel(logging.ERROR)
 logging.getLogger('transformers').setLevel(logging.ERROR)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+# Configure HF cache to persist downloads
+os.environ['HF_HOME'] = os.environ.get('HF_HOME', '/tmp/huggingface_cache')
+os.environ['TRANSFORMERS_CACHE'] = os.environ.get('TRANSFORMERS_CACHE', '/tmp/huggingface_cache')
+os.environ['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
+
 FINAL_SAMPLE_RATE = 16000
 TEMPO_FACTOR = 1.1
 MASTER_VOLUME_GAIN = 0.8
