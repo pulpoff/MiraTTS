@@ -39,25 +39,27 @@ class MiraTTS:
         return context_tokens
 
         
-    def generate(self, text, context_tokens):
+    def generate(self, text, context_tokens, reference_text=None):
         """generates speech from input text"""
-        formatted_prompt = self.codec.format_prompt(text, context_tokens, None)
-      
+        formatted_prompt = self.codec.format_prompt(text, context_tokens, reference_text)
+
         response = self.pipe([formatted_prompt], gen_config=self.gen_config, do_preprocess=False)
         audio = self.codec.decode(response[0].text, context_tokens)
         return audio
       
-    def batch_generate(self, prompts, context_tokens):
+    def batch_generate(self, prompts, context_tokens, reference_texts=None):
         """
         Generates speech from text, for larger batch size
 
         Args:
-            prompt (list): Input for tts model, list of prompts
-            voice (list): Description of voice, list of voices respective to prompt
+            prompts (list): Input for tts model, list of prompts
+            context_tokens (list): List of context tokens respective to prompts
+            reference_texts (list, optional): List of reference texts for voice cloning
         """
         formatted_prompts = []
-        for prompt, context_token in zip(prompts, cycle(context_tokens)):
-            formatted_prompt = self.codec.format_prompt(prompt, context_token, None)
+        reference_texts_cycle = cycle(reference_texts) if reference_texts else cycle([None])
+        for prompt, context_token, ref_text in zip(prompts, cycle(context_tokens), reference_texts_cycle):
+            formatted_prompt = self.codec.format_prompt(prompt, context_token, ref_text)
             formatted_prompts.append(formatted_prompt)
         
         responses = self.pipe(formatted_prompts, gen_config=self.gen_config, do_preprocess=False)
