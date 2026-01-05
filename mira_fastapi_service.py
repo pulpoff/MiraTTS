@@ -16,6 +16,7 @@ from typing import Optional, Dict, List
 import warnings
 import numpy as np
 import scipy.io.wavfile as wav
+import soundfile as sf
 
 from mira.streaming_model import MiraTTSStreaming
 
@@ -49,6 +50,15 @@ def discover_voices() -> Dict:
 
     for voice_path in audio_files:
         voice_id = voice_path.stem
+
+        # Validate audio file can be opened
+        try:
+            with sf.SoundFile(str(voice_path)) as f:
+                pass  # Just checking if file can be opened
+        except Exception as e:
+            print(f"⚠️  Skipping invalid audio file '{voice_id}': {e}")
+            continue
+
         text_path = VOICES_DIR / f"{voice_id}.txt"
         reference_text = None
         has_text = False
@@ -125,8 +135,18 @@ def get_voice_context(voice_id: str):
         voice_path = AVAILABLE_VOICES[voice_id]['path']
         print(f"Encoding reference audio: {voice_id}")
         mira_tts = get_mira_tts()
-        voice_context_cache[voice_id] = mira_tts.encode_audio(voice_path)
-        print(f"✓ Cached context tokens for {voice_id}")
+
+        try:
+            voice_context_cache[voice_id] = mira_tts.encode_audio(voice_path)
+            print(f"✓ Cached context tokens for {voice_id}")
+        except Exception as e:
+            print(f"✗ Failed to encode audio for '{voice_id}': {e}")
+            if voice_id != DEFAULT_VOICE:
+                print(f"⚠️  Falling back to default voice: {DEFAULT_VOICE}")
+                return get_voice_context(DEFAULT_VOICE)
+            else:
+                raise ValueError(f"Default voice '{DEFAULT_VOICE}' audio file is corrupted or invalid")
+
     return voice_context_cache[voice_id]
 
 def validate_voice(voice_id: str) -> bool:
