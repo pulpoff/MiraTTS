@@ -38,7 +38,7 @@ FINAL_SAMPLE_RATE = 16000
 TEMPO_FACTOR = 1.1
 MASTER_VOLUME_GAIN = 0.8
 DEFAULT_SPEED = 1.0
-MIRA_OUTPUT_SAMPLE_RATE = 48000
+MIRA_OUTPUT_SAMPLE_RATE = 24000  # Native codec output (not 48kHz - faster resampling!)
 STREAMING_CHUNK_SIZE = 25  # Smaller chunks for XTTS2-like TTFT (target: 50-100ms)
 
 VOICES_DIR = Path("/voices") if Path("/voices").exists() else Path("./voices")
