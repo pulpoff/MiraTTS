@@ -24,34 +24,36 @@ https://github.com/user-attachments/assets/262088ae-068a-49f2-8ad6-ab32c66dcd17
 
 ## Installation
 
-### Quick Install (Library Only)
+### Quick Install (Library Only - Original MiraTTS)
 
 ```bash
 pip install git+https://github.com/ysharma3501/MiraTTS.git
 ```
 
-### Full Install (with FastAPI Service)
+### Full Install (with FastAPI Service and Streaming)
 
 **Option 1: From repository (Recommended)**
 ```bash
-# Clone the repository
+# Clone this repository (includes streaming and FastAPI service)
 git clone https://github.com/pulpoff/MiraTTS.git
 cd MiraTTS
 
-# Install MiraTTS package first (includes ncodec dependency)
+# Install MiraTTS base package first (includes ncodec dependency)
 pip install git+https://github.com/ysharma3501/MiraTTS.git
 
 # Then install service dependencies
 pip install -r requirements.txt
 ```
 
-**Option 2: Manual dependencies**
+**Option 2: Direct install with all dependencies**
 ```bash
-# Install MiraTTS package
-pip install git+https://github.com/ysharma3501/MiraTTS.git
+# Clone this repository
+git clone https://github.com/pulpoff/MiraTTS.git
+cd MiraTTS
 
-# Install service dependencies
-pip install torch lmdeploy fastapi uvicorn scipy psutil gunicorn librosa soundfile
+# Install everything at once
+pip install git+https://github.com/ysharma3501/MiraTTS.git
+pip install lmdeploy omegaconf fastapi uvicorn scipy psutil gunicorn librosa soundfile
 ```
 
 ### System Requirements
