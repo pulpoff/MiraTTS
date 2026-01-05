@@ -63,10 +63,15 @@ class MiraTTSStreaming:
         accumulated_tokens = ""
         previous_audio_length = 0
         tokens_since_decode = 0
+        iteration_count = 0
 
         for response in self.pipe.stream_infer([formatted_prompt], gen_config=self.gen_config, do_preprocess=False):
+            iteration_count += 1
+            # Track new tokens added in this iteration
+            prev_length = len(accumulated_tokens)
             accumulated_tokens = response.text
-            tokens_since_decode += len(response.text) - len(accumulated_tokens) + tokens_since_decode
+            new_tokens = len(accumulated_tokens) - prev_length
+            tokens_since_decode += new_tokens
 
             should_decode = tokens_since_decode >= chunk_size or response.finish_reason is not None
 
@@ -84,10 +89,13 @@ class MiraTTSStreaming:
 
                             if new_audio.numel() > 0:
                                 yield new_audio
-                except:
+                except Exception as e:
+                    print(f"⚠️  Decode error at iteration {iteration_count}: {e}")
                     continue
 
             if response.finish_reason is not None:
+                if iteration_count == 0 or len(accumulated_tokens) == 0:
+                    print(f"⚠️  Streaming ended with no tokens generated (iterations={iteration_count}, tokens={len(accumulated_tokens)})")
                 break
 
     def batch_generate(self, prompts, context_tokens, reference_texts=None):
