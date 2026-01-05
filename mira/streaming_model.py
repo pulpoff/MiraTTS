@@ -51,7 +51,7 @@ class MiraTTSStreaming:
         response = self.pipe([formatted_prompt], gen_config=self.gen_config, do_preprocess=False)
         return self.codec.decode(response[0].text, context_tokens)
 
-    def split_text_into_chunks(self, text, max_chunk_length=150):
+    def split_text_into_chunks(self, text, max_chunk_length=40):
         """
         Split text into smaller chunks for streaming (MeloTTS-style).
         Tries to split on sentence boundaries for natural speech.
@@ -92,7 +92,7 @@ class MiraTTSStreaming:
 
         return chunks if chunks else [text]
 
-    def stream_generate(self, text, context_tokens, chunk_size=150, reference_text=None):
+    def stream_generate(self, text, context_tokens, chunk_size=40, reference_text=None):
         """Streaming generation using MeloTTS-style text chunking
 
         NOTE: MiraTTS doesn't have native streaming. We chunk the text
