@@ -1,13 +1,17 @@
 import os
-# Suppress ONNX Runtime warnings BEFORE any imports that load onnxruntime
-os.environ['ORT_LOGGING_LEVEL'] = '3'
+import sys
+
+# Suppress ALL logging and warnings BEFORE any imports
+os.environ['ORT_LOGGING_LEVEL'] = '4'  # Suppress ONNX warnings completely
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
 
 import logging
 import time
 import tempfile
 import subprocess
 import gc
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr
 from pathlib import Path
 import torch
 from fastapi import FastAPI, Request, Response, HTTPException
@@ -21,13 +25,14 @@ import numpy as np
 import scipy.io.wavfile as wav
 import soundfile as sf
 
-from mira.streaming_model import MiraTTSStreaming
-
+# Suppress all warnings
 warnings.filterwarnings('ignore')
 logging.basicConfig(level=logging.ERROR)
 logging.getLogger('lmdeploy').setLevel(logging.ERROR)
 logging.getLogger('transformers').setLevel(logging.ERROR)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+logging.getLogger('onnxruntime').setLevel(logging.ERROR)
+
+from mira.streaming_model import MiraTTSStreaming
 
 # Configure HF cache to persist downloads
 os.environ['HF_HOME'] = os.environ.get('HF_HOME', '/tmp/huggingface_cache')
@@ -38,7 +43,7 @@ FINAL_SAMPLE_RATE = 16000
 TEMPO_FACTOR = 1.1
 MASTER_VOLUME_GAIN = 0.8
 DEFAULT_SPEED = 1.0
-MIRA_OUTPUT_SAMPLE_RATE = 48000
+MIRA_OUTPUT_SAMPLE_RATE = 24000  # Native codec output (not 48kHz - faster resampling!)
 STREAMING_CHUNK_SIZE = 25  # Smaller chunks for XTTS2-like TTFT (target: 50-100ms)
 
 VOICES_DIR = Path("/voices") if Path("/voices").exists() else Path("./voices")
@@ -68,7 +73,7 @@ def discover_voices() -> Dict:
             with sf.SoundFile(str(voice_path)) as f:
                 pass  # Just checking if file can be opened
         except Exception as e:
-            print(f"⚠️  Skipping invalid audio file '{voice_id}': {e}")
+            print(f"WARNING: Skipping invalid audio file '{voice_id}': {e}")
             continue
 
         text_path = VOICES_DIR / f"{voice_id}.txt"
@@ -81,7 +86,7 @@ def discover_voices() -> Dict:
                     reference_text = f.read().strip()
                 has_text = True
             except Exception as e:
-                print(f"⚠️  Warning: Could not read {text_path}: {e}")
+                print(f"WARNING: Warning: Could not read {text_path}: {e}")
 
         voices[voice_id] = {
             'name': voice_id.replace('_', ' ').title(),
@@ -116,13 +121,13 @@ def initialize_model():
         enable_prefix_caching=True,
         cache_max_entry_count=0.5
     )
-    print("✓ Model initialized")
+    print("Model initialized")
 
     # Pre-cache default voice for low latency
     if DEFAULT_VOICE:
         print(f"Pre-caching default voice: {DEFAULT_VOICE}")
         get_voice_context(DEFAULT_VOICE)
-        print(f"✓ Default voice ready")
+        print(f"Default voice ready")
 
 def get_mira_tts():
     """Get the initialized MiraTTS model"""
@@ -140,9 +145,9 @@ def get_voice_context(voice_id: str):
         try:
             voice_context_cache[voice_id] = mira_tts.encode_audio(voice_path)
         except Exception as e:
-            print(f"✗ Failed to encode audio for '{voice_id}': {e}")
+            print(f"ERROR: Failed to encode audio for '{voice_id}': {e}")
             if voice_id != DEFAULT_VOICE:
-                print(f"⚠️  Falling back to default voice: {DEFAULT_VOICE}")
+                print(f"WARNING: Falling back to default voice: {DEFAULT_VOICE}")
                 return get_voice_context(DEFAULT_VOICE)
             else:
                 raise ValueError(f"Default voice '{DEFAULT_VOICE}' audio file is corrupted or invalid")
@@ -259,7 +264,7 @@ def generate_mira_audio(text: str, voice: str):
     original_voice = voice
     if not validate_voice(voice):
         voice = DEFAULT_VOICE
-        print(f"⚠️  Voice '{original_voice}' not found, falling back to default voice: {voice}")
+        print(f"WARNING: Voice '{original_voice}' not found, falling back to default voice: {voice}")
 
     voice_info = AVAILABLE_VOICES[voice]
     reference_text = voice_info.get('reference_text')
@@ -277,7 +282,7 @@ def generate_mira_audio(text: str, voice: str):
 
     total_time = time.time() - start_time
     audio_duration_sec = len(audio_numpy) / MIRA_OUTPUT_SAMPLE_RATE
-    print(f"✓ {voice}: Non-streaming Total={total_time:.2f}s Audio={audio_duration_sec:.2f}s Samples={len(audio_numpy):,}")
+    print(f"{voice}: Non-streaming Total={total_time:.2f}s Audio={audio_duration_sec:.2f}s Samples={len(audio_numpy):,}")
 
     return audio_numpy
 
@@ -326,12 +331,12 @@ async def generate_audio_endpoint(request: TTSRequest):
     try:
         if not request.voice:
             request.voice = DEFAULT_VOICE
-            print(f"⚠️  No voice specified, using default voice: {request.voice}")
+            print(f"WARNING: No voice specified, using default voice: {request.voice}")
 
         original_voice = request.voice
         if not validate_voice(request.voice):
             request.voice = DEFAULT_VOICE
-            print(f"⚠️  Voice '{original_voice}' not found, falling back to default voice: {request.voice}")
+            print(f"WARNING: Voice '{original_voice}' not found, falling back to default voice: {request.voice}")
 
         raw_pcm = await asyncio.to_thread(
             run_non_streaming_inference,
@@ -375,7 +380,7 @@ async def async_streaming_generator(prompt: str, voice: str,
     original_voice = voice
     if not validate_voice(voice):
         voice = DEFAULT_VOICE
-        print(f"⚠️  Voice '{original_voice}' not found, falling back to default voice: {voice}")
+        print(f"WARNING: Voice '{original_voice}' not found, falling back to default voice: {voice}")
 
     voice_info = AVAILABLE_VOICES[voice]
     reference_text = voice_info.get('reference_text')
@@ -446,9 +451,9 @@ async def async_streaming_generator(prompt: str, voice: str,
                         pass
 
                 if chunk_count == 0:
-                    print(f"✗ Client disconnected before first chunk")
+                    print(f"ERROR: Client disconnected before first chunk")
                 else:
-                    print(f"✗ Client disconnected after {chunk_count} chunk(s), {total_bytes:,} bytes sent")
+                    print(f"ERROR: Client disconnected after {chunk_count} chunk(s), {total_bytes:,} bytes sent")
                 break
 
             finally:
@@ -469,12 +474,12 @@ async def async_streaming_generator(prompt: str, voice: str,
             audio_duration_sec = total_bytes / (FINAL_SAMPLE_RATE * 2)  # 16kHz, 16-bit = 2 bytes per sample
             # Truncate text for readability
             text_preview = prompt[:60] + "..." if len(prompt) > 60 else prompt
-            print(f"✓ {voice}: \"{text_preview}\" TTFT={first_chunk_time:.3f}s Total={total_time:.2f}s Audio={audio_duration_sec:.2f}s Chunks={chunk_count} Bytes={total_bytes:,}")
+            print(f"{voice}: \"{text_preview}\" TTFT={first_chunk_time:.3f}s Total={total_time:.2f}s Audio={audio_duration_sec:.2f}s Chunks={chunk_count} Bytes={total_bytes:,}")
         else:
-            print(f"⚠️  {voice}: No audio generated! Input text may be empty or encoding failed.")
+            print(f"WARNING: {voice}: No audio generated! Input text may be empty or encoding failed.")
 
     except Exception as e:
-        print(f"✗ Error in streaming generator after {chunk_count} chunks: {e}")
+        print(f"ERROR: Error in streaming generator after {chunk_count} chunks: {e}")
         import traceback
         traceback.print_exc()
 
@@ -494,12 +499,12 @@ async def generate_audio_stream_endpoint(request: TTSRequest):
     try:
         if not request.voice:
             request.voice = DEFAULT_VOICE
-            print(f"⚠️  No voice specified, using default voice: {request.voice}")
+            print(f"WARNING: No voice specified, using default voice: {request.voice}")
 
         original_voice = request.voice
         if not validate_voice(request.voice):
             request.voice = DEFAULT_VOICE
-            print(f"⚠️  Voice '{original_voice}' not found, falling back to default voice: {request.voice}")
+            print(f"WARNING: Voice '{original_voice}' not found, falling back to default voice: {request.voice}")
 
         voice_info = AVAILABLE_VOICES[request.voice]
         return StreamingResponse(
@@ -690,7 +695,7 @@ async def root():
 if __name__ == "__main__":
     try:
         subprocess.run(['ffmpeg', '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        print("✓ FFmpeg found")
+        print("FFmpeg found")
     except FileNotFoundError:
         print("FATAL ERROR: FFmpeg is required but not found in the environment PATH.")
         exit(1)
