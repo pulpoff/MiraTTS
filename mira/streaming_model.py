@@ -1,7 +1,7 @@
 import torch
 from itertools import cycle
 from ncodec.codec import TTSCodec
-from lmdeploy import pipeline, GenerationConfig, TurbomindEngineConfig
+from lmdeploy import pipeline, GenerationConfig, PytorchEngineConfig
 from mira.utils import clear_cache
 
 
@@ -9,7 +9,7 @@ class MiraTTSStreaming:
     """MiraTTS with real chunked streaming via LMDeploy stream_infer"""
 
     def __init__(self, model_dir="YatharthS/MiraTTS", tp=1, enable_prefix_caching=True, cache_max_entry_count=0.2, dtype='float16'):
-        backend_config = TurbomindEngineConfig(
+        backend_config = PytorchEngineConfig(
             cache_max_entry_count=cache_max_entry_count,
             tp=tp,
             dtype=dtype,
