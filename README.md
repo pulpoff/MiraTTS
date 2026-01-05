@@ -32,26 +32,26 @@ pip install git+https://github.com/ysharma3501/MiraTTS.git
 
 ### Full Install (with FastAPI Service)
 
-**Option 1: From repository**
+**Option 1: From repository (Recommended)**
 ```bash
 # Clone the repository
 git clone https://github.com/pulpoff/MiraTTS.git
 cd MiraTTS
 
-# Install all dependencies
-pip install -r requirements.txt
-
-# Also install MiraTTS package
+# Install MiraTTS package first (includes ncodec dependency)
 pip install git+https://github.com/ysharma3501/MiraTTS.git
+
+# Then install service dependencies
+pip install -r requirements.txt
 ```
 
 **Option 2: Manual dependencies**
 ```bash
-# Install MiraTTS
+# Install MiraTTS package
 pip install git+https://github.com/ysharma3501/MiraTTS.git
 
 # Install service dependencies
-pip install fastapi uvicorn scipy psutil gunicorn
+pip install torch lmdeploy fastapi uvicorn scipy psutil gunicorn librosa soundfile
 ```
 
 ### System Requirements
