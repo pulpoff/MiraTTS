@@ -346,15 +346,6 @@ The voice ID is the filename without extension (e.g., `ref/john.wav` + `ref/john
 
 ## Performance
 
-### Streaming Latency
-
-| Mode | First Chunk Latency | Chunk Size | User Experience |
-|------|-------------------|------------|-----------------|
-| **v2.0 Streaming** | **100-200ms** | 50-200ms | Excellent ⭐⭐⭐⭐⭐ |
-| v1.0 Sentence-based | 500-2000ms | 1-3 seconds | Good ⭐⭐⭐ |
-| Non-streaming | Full generation | Complete audio | Baseline ⭐⭐ |
-
-### Speed
 - **100x+ realtime** generation speed
 - First chunk in **~100-200ms** (streaming mode)
 - Full generation: ~1-2 seconds for 10 seconds of audio
