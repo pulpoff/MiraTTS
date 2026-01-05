@@ -1,7 +1,7 @@
 # Core dependencies for MiraTTS
+# Note: ncodec is included in the MiraTTS package installation
 torch>=2.0.0
 lmdeploy>=0.2.0
-ncodec
 
 # FastAPI service dependencies
 fastapi>=0.100.0
