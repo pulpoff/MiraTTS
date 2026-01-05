@@ -106,7 +106,6 @@ class MiraTTSStreaming:
         """
         # Split text into chunks
         text_chunks = self.split_text_into_chunks(text, max_chunk_length=chunk_size)
-        print(f"Split into {len(text_chunks)} text chunks")
 
         for i, text_chunk in enumerate(text_chunks):
             if not text_chunk.strip():
@@ -116,10 +115,7 @@ class MiraTTSStreaming:
             formatted_prompt = self.codec.format_prompt(text_chunk, context_tokens, reference_text)
             response = self.pipe([formatted_prompt], gen_config=self.gen_config, do_preprocess=False)
 
-            # Debug: Check what was generated
             generated_text = response[0].text
-            print(f"🔍 Generated tokens (len={len(generated_text)}): {generated_text[:100]}...")
-
             audio = self.codec.decode(generated_text, context_tokens)
 
             if not isinstance(audio, torch.Tensor) or audio.numel() == 0:
@@ -128,14 +124,7 @@ class MiraTTSStreaming:
 
             # Yield the complete chunk audio
             audio_flat = audio.flatten()
-            num_samples = audio_flat.shape[0]
-
-            if i == 0:
-                print(f"✓ First chunk generated: {num_samples} samples")
-
             yield audio_flat
-
-            print(f"  Chunk {i+1}/{len(text_chunks)} processed ({num_samples} samples)")
 
     def batch_generate(self, prompts, context_tokens, reference_texts=None):
         """
