@@ -39,7 +39,7 @@ TEMPO_FACTOR = 1.1
 MASTER_VOLUME_GAIN = 0.8
 DEFAULT_SPEED = 1.0
 MIRA_OUTPUT_SAMPLE_RATE = 48000
-STREAMING_CHUNK_SIZE = 40  # Characters per chunk - smaller for lower TTFT (target: 100-200ms)
+STREAMING_CHUNK_SIZE = 25  # Smaller chunks for XTTS2-like TTFT (target: 50-100ms)
 
 VOICES_DIR = Path("/voices") if Path("/voices").exists() else Path("./voices")
 print(f"Using voice directory: {VOICES_DIR.absolute()}")
