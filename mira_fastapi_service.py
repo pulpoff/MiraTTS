@@ -403,6 +403,14 @@ async def async_streaming_generator(prompt: str, voice: str,
 
                 # Convert torch tensor to numpy array for scipy.io.wavfile.write
                 audio_numpy = audio_chunk.cpu().numpy() if hasattr(audio_chunk, 'cpu') else audio_chunk
+
+                # Convert float16/float32 to int16 (standard WAV format)
+                if audio_numpy.dtype in [np.float16, np.float32, np.float64]:
+                    # Ensure float32 for proper scaling
+                    audio_numpy = audio_numpy.astype(np.float32)
+                    # Scale to int16 range and convert
+                    audio_numpy = (audio_numpy * 32767).astype(np.int16)
+
                 await asyncio.to_thread(wav.write, temp_wav_path, MIRA_OUTPUT_SAMPLE_RATE, audio_numpy)
 
                 raw_pcm = await asyncio.to_thread(
