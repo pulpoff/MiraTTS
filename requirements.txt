@@ -2,6 +2,7 @@
 # Note: ncodec is included in the MiraTTS package installation
 # Note: torch/torchaudio/torchvision versions managed by lmdeploy
 lmdeploy>=0.2.0
+omegaconf>=2.0.0
 
 # FastAPI service dependencies
 fastapi>=0.100.0
