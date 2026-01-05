@@ -109,8 +109,10 @@ class MiraTTSStreaming:
 
         try:
             # Attempt token-level streaming with PyTorch backend
+            print(f"🔄 Starting token-level streaming with PyTorch backend...")
             accumulated_tokens = []
             token_count = 0
+            chunk_yield_count = 0
 
             for output in self.pipe.stream_infer([formatted_prompt], gen_config=self.gen_config, do_preprocess=False):
                 token_text = output.text
@@ -119,6 +121,10 @@ class MiraTTSStreaming:
                 if token_text:
                     accumulated_tokens.append(token_text)
                     token_count += 1
+
+                    # Log progress every 10 tokens
+                    if token_count % 10 == 0:
+                        print(f"  📊 Accumulated {token_count} tokens...")
 
                     # Decode every chunk_size tokens
                     if token_count >= chunk_size:
@@ -130,6 +136,8 @@ class MiraTTSStreaming:
                                 audio = self.codec.decode(full_token_sequence, context_tokens)
 
                                 if isinstance(audio, torch.Tensor) and audio.numel() > 0:
+                                    chunk_yield_count += 1
+                                    print(f"  ✓ Yielded chunk #{chunk_yield_count} ({token_count} tokens, {audio.numel()} samples)")
                                     yield audio.flatten()
                                     accumulated_tokens = []
                                     token_count = 0
@@ -144,9 +152,13 @@ class MiraTTSStreaming:
                     try:
                         audio = self.codec.decode(full_token_sequence, context_tokens)
                         if isinstance(audio, torch.Tensor) and audio.numel() > 0:
+                            chunk_yield_count += 1
+                            print(f"  ✓ Yielded final chunk #{chunk_yield_count} ({token_count} remaining tokens, {audio.numel()} samples)")
                             yield audio.flatten()
                     except Exception as e:
                         print(f"⚠️  Failed to decode final tokens: {e}")
+
+            print(f"✅ Token-level streaming completed: {chunk_yield_count} audio chunks yielded")
 
         except Exception as e:
             print(f"⚠️  Token-level streaming failed: {e}")
