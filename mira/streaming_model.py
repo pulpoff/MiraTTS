@@ -52,54 +52,86 @@ class MiraTTSStreaming:
         response = self.pipe([formatted_prompt], gen_config=self.gen_config, do_preprocess=False)
         return self.codec.decode(response[0].text, context_tokens)
 
-    def stream_generate(self, text, context_tokens, chunk_size=50, reference_text=None):
-        """Simulated streaming by generating full audio then chunking
+    def split_text_into_chunks(self, text, max_chunk_length=150):
+        """
+        Split text into smaller chunks for streaming (MeloTTS-style).
+        Tries to split on sentence boundaries for natural speech.
+        """
+        import re
 
-        NOTE: LMDeploy's stream_infer is not compatible with MiraTTS model.
-        This uses standard generation and yields audio in chunks for streaming UX.
+        # Split on sentence boundaries
+        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+
+        chunks = []
+        current_chunk = ""
+
+        for sentence in sentences:
+            # If adding this sentence would exceed max length, save current chunk
+            if current_chunk and len(current_chunk) + len(sentence) > max_chunk_length:
+                chunks.append(current_chunk.strip())
+                current_chunk = sentence
+            else:
+                current_chunk = current_chunk + " " + sentence if current_chunk else sentence
+
+        # Add the last chunk
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+
+        # If no sentence boundaries found, split by length
+        if not chunks:
+            words = text.split()
+            current_chunk = ""
+            for word in words:
+                if len(current_chunk) + len(word) + 1 > max_chunk_length:
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                    current_chunk = word
+                else:
+                    current_chunk = current_chunk + " " + word if current_chunk else word
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+
+        return chunks if chunks else [text]
+
+    def stream_generate(self, text, context_tokens, chunk_size=150, reference_text=None):
+        """Streaming generation using MeloTTS-style text chunking
+
+        NOTE: MiraTTS doesn't have native streaming. We chunk the text
+        and generate/stream each chunk sequentially (same as MeloTTS).
 
         Args:
             text: Text to synthesize
             context_tokens: Encoded reference audio
-            chunk_size: Audio chunk size in samples (not tokens)
+            chunk_size: Max characters per text chunk (default 150)
             reference_text: Transcript of reference audio
         """
-        import re
+        # Split text into chunks
+        text_chunks = self.split_text_into_chunks(text, max_chunk_length=chunk_size)
+        print(f"Split into {len(text_chunks)} text chunks")
 
-        # Split text into sentences for progressive generation
-        sentences = re.split(r'([.!?]+)', text)
-        sentences = [''.join(sentences[i:i+2]) for i in range(0, len(sentences)-1, 2)]
-        if len(sentences) == 0:
-            sentences = [text]
-
-        print(f"🔍 Streaming {len(sentences)} sentence(s), chunk_size={chunk_size} samples")
-
-        for i, sentence in enumerate(sentences):
-            if not sentence.strip():
+        for i, text_chunk in enumerate(text_chunks):
+            if not text_chunk.strip():
                 continue
 
-            # Generate full audio for this sentence
-            formatted_prompt = self.codec.format_prompt(sentence.strip(), context_tokens, reference_text)
+            # Generate full audio for this chunk
+            formatted_prompt = self.codec.format_prompt(text_chunk, context_tokens, reference_text)
             response = self.pipe([formatted_prompt], gen_config=self.gen_config, do_preprocess=False)
             audio = self.codec.decode(response[0].text, context_tokens)
 
             if not isinstance(audio, torch.Tensor) or audio.numel() == 0:
-                print(f"⚠️  Sentence {i+1}: No audio generated")
+                print(f"⚠️  Chunk {i+1}: No audio generated")
                 continue
 
-            # Yield in chunks for streaming effect
+            # Yield the complete chunk audio
             audio_flat = audio.flatten()
             num_samples = audio_flat.shape[0]
-            chunk_samples = chunk_size * 1000  # Convert to actual sample count
 
-            for start_idx in range(0, num_samples, chunk_samples):
-                end_idx = min(start_idx + chunk_samples, num_samples)
-                chunk = audio_flat[start_idx:end_idx]
+            if i == 0:
+                print(f"✓ First chunk generated: {num_samples} samples")
 
-                if chunk.numel() > 0:
-                    yield chunk
+            yield audio_flat
 
-            print(f"✓ Sentence {i+1}/{len(sentences)}: {num_samples} samples")
+            print(f"  Chunk {i+1}/{len(text_chunks)} processed ({num_samples} samples)")
 
     def batch_generate(self, prompts, context_tokens, reference_texts=None):
         """
