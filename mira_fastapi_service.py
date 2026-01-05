@@ -18,7 +18,6 @@ import numpy as np
 import scipy.io.wavfile as wav
 
 from mira.streaming_model import MiraTTSStreaming
-from mira.utils import split_text
 
 warnings.filterwarnings('ignore')
 
