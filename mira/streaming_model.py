@@ -1,22 +1,14 @@
-import gc
 import torch
 from itertools import cycle
 from ncodec.codec import TTSCodec
 from lmdeploy import pipeline, GenerationConfig, TurbomindEngineConfig
-
-from mira.utils import clear_cache, split_text
+from mira.utils import clear_cache
 
 
 class MiraTTSStreaming:
-    """
-    Extended MiraTTS class with real chunked streaming support.
-
-    Uses LMDeploy's stream_infer() to generate tokens incrementally
-    and decodes them in batches to produce audio chunks.
-    """
+    """MiraTTS with real chunked streaming via LMDeploy stream_infer"""
 
     def __init__(self, model_dir="YatharthS/MiraTTS", tp=1, enable_prefix_caching=True, cache_max_entry_count=0.2):
-
         backend_config = TurbomindEngineConfig(
             cache_max_entry_count=cache_max_entry_count,
             tp=tp,
@@ -37,7 +29,6 @@ class MiraTTSStreaming:
 
     def set_params(self, top_p=0.95, top_k=50, temperature=0.8, max_new_tokens=1024,
                    repetition_penalty=1.2, min_p=0.05):
-        """Sets sampling parameters for the llm"""
         self.gen_config = GenerationConfig(
             top_p=top_p,
             top_k=top_k,
@@ -51,86 +42,51 @@ class MiraTTSStreaming:
     def c_cache(self):
         clear_cache()
 
-    def split_text(self, text):
-        return split_text(text)
-
     def encode_audio(self, audio_file):
-        """Encodes audio into context tokens"""
-        context_tokens = self.codec.encode(audio_file)
-        return context_tokens
+        return self.codec.encode(audio_file)
 
     def generate(self, text, context_tokens, reference_text=None):
-        """Generates speech from input text (non-streaming)
-
-        Args:
-            text (str): Text to synthesize
-            context_tokens: Encoded reference audio tokens
-            reference_text (str, optional): Transcript of reference audio for better voice cloning
-        """
         formatted_prompt = self.codec.format_prompt(text, context_tokens, reference_text)
         response = self.pipe([formatted_prompt], gen_config=self.gen_config, do_preprocess=False)
-        audio = self.codec.decode(response[0].text, context_tokens)
-        return audio
+        return self.codec.decode(response[0].text, context_tokens)
 
     def stream_generate(self, text, context_tokens, chunk_size=50, reference_text=None):
-        """
-        Generates speech from input text with streaming.
+        """Stream audio chunks as tokens are generated
 
         Args:
-            text (str): Input text to synthesize
-            context_tokens: Encoded reference audio tokens
-            chunk_size (int): Number of tokens to accumulate before decoding
-                             Smaller = lower latency, more overhead
-                             Larger = higher latency, more efficient
-            reference_text (str, optional): Transcript of reference audio for better voice cloning
-
-        Yields:
-            torch.Tensor: Audio chunks as they're generated
+            text: Text to synthesize
+            context_tokens: Encoded reference audio
+            chunk_size: Tokens to accumulate before decoding (lower=faster, higher=efficient)
+            reference_text: Transcript of reference audio
         """
         formatted_prompt = self.codec.format_prompt(text, context_tokens, reference_text)
-
-        # Track token accumulation
         accumulated_tokens = ""
         previous_audio_length = 0
+        tokens_since_decode = 0
 
-        # Stream tokens from LMDeploy
         for response in self.pipe.stream_infer([formatted_prompt], gen_config=self.gen_config, do_preprocess=False):
-            # Get the current generated text (accumulated tokens)
-            current_tokens = response.text
+            accumulated_tokens = response.text
+            tokens_since_decode += len(response.text) - len(accumulated_tokens) + tokens_since_decode
 
-            # Check if we have enough new tokens to decode
-            new_tokens = current_tokens[len(accumulated_tokens):]
-            accumulated_tokens = current_tokens
+            should_decode = tokens_since_decode >= chunk_size or response.finish_reason is not None
 
-            # Decode when we have enough tokens or when generation is complete
-            should_decode = (
-                len(accumulated_tokens) - len(accumulated_tokens.strip()) >= chunk_size or  # Enough tokens
-                response.finish_reason is not None  # Generation complete
-            )
-
-            if should_decode and accumulated_tokens.strip():
+            if should_decode and accumulated_tokens:
                 try:
-                    # Decode all accumulated tokens
                     full_audio = self.codec.decode(accumulated_tokens, context_tokens)
 
-                    # Extract only the new audio (difference from previous)
-                    if isinstance(full_audio, torch.Tensor):
-                        current_length = full_audio.shape[0] if full_audio.ndim > 0 else 0
+                    if isinstance(full_audio, torch.Tensor) and full_audio.numel() > 0:
+                        current_length = full_audio.shape[0]
 
                         if current_length > previous_audio_length:
-                            # Yield only the new audio chunk
                             new_audio = full_audio[previous_audio_length:]
                             previous_audio_length = current_length
+                            tokens_since_decode = 0
 
                             if new_audio.numel() > 0:
                                 yield new_audio
-
-                except Exception as e:
-                    # If decoding fails (incomplete tokens), continue accumulating
-                    # This can happen if tokens aren't yet decodable
+                except:
                     continue
 
-            # Break if generation is complete
             if response.finish_reason is not None:
                 break
 
