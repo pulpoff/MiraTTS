@@ -21,6 +21,10 @@ import soundfile as sf
 from mira.streaming_model import MiraTTSStreaming
 
 warnings.filterwarnings('ignore')
+logging.basicConfig(level=logging.ERROR)
+logging.getLogger('lmdeploy').setLevel(logging.ERROR)
+logging.getLogger('transformers').setLevel(logging.ERROR)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 FINAL_SAMPLE_RATE = 16000
 TEMPO_FACTOR = 1.1
@@ -97,30 +101,14 @@ def get_mira_tts():
         except RuntimeError:
             pass
 
-        print("\n" + "="*60)
-        print("Initializing MiraTTS Pipeline")
-        print("="*60)
-
+        print("Initializing MiraTTS model...")
         MIRA_TTS = MiraTTSStreaming(
             model_dir="YatharthS/MiraTTS",
             tp=1,
             enable_prefix_caching=True,
             cache_max_entry_count=0.5
         )
-        print(f"✓ MiraTTS initialized")
-        print(f"  Model: YatharthS/MiraTTS")
-        print(f"  Output sample rate: {MIRA_OUTPUT_SAMPLE_RATE}Hz")
-        print(f"  Device: {device}")
-
-        if AVAILABLE_VOICES:
-            print(f"\nFound {len(AVAILABLE_VOICES)} reference voice(s):")
-            for voice_id in sorted(AVAILABLE_VOICES.keys()):
-                voice_info = AVAILABLE_VOICES[voice_id]
-                print(f"  • {voice_id}: {voice_info['name']} ({voice_info['format']}, {voice_info['file_size_mb']}MB)")
-
-            default_voice = list(AVAILABLE_VOICES.keys())[0]
-            print(f"\nDefault voice: {default_voice}")
-        print("="*60)
+        print("✓ Model initialized")
 
     return MIRA_TTS
 
@@ -133,12 +121,10 @@ def get_voice_context(voice_id: str):
         if voice_id not in AVAILABLE_VOICES:
             raise ValueError(f"Voice '{voice_id}' not found")
         voice_path = AVAILABLE_VOICES[voice_id]['path']
-        print(f"Encoding reference audio: {voice_id}")
         mira_tts = get_mira_tts()
 
         try:
             voice_context_cache[voice_id] = mira_tts.encode_audio(voice_path)
-            print(f"✓ Cached context tokens for {voice_id}")
         except Exception as e:
             print(f"✗ Failed to encode audio for '{voice_id}': {e}")
             if voice_id != DEFAULT_VOICE:
@@ -259,16 +245,18 @@ def generate_mira_audio(text: str, voice: str):
     voice_info = AVAILABLE_VOICES[voice]
     reference_text = voice_info.get('reference_text')
 
-    print(f"Generating audio with voice: {voice} ({voice_info['name']}) {'[with reference text]' if reference_text else '[no reference text]'}")
-
     global voice_usage_stats
     voice_usage_stats[voice] = voice_usage_stats.get(voice, 0) + 1
 
+    start_time = time.time()
     mira_tts = get_mira_tts()
     context_tokens = get_voice_context(voice)
     audio_tensor = mira_tts.generate(text, context_tokens, reference_text=reference_text)
 
     audio_numpy = audio_tensor.cpu().numpy() if isinstance(audio_tensor, torch.Tensor) else audio_tensor
+    total_time = time.time() - start_time
+    print(f"✓ {voice}: Non-streaming Total={total_time:.2f}s")
+
     return audio_numpy.flatten() if audio_numpy.ndim > 1 else audio_numpy
 
 def run_non_streaming_inference(prompt: str, voice: str,
@@ -370,11 +358,10 @@ async def async_streaming_generator(prompt: str, voice: str,
     voice_info = AVAILABLE_VOICES[voice]
     reference_text = voice_info.get('reference_text')
 
-    print(f"Streaming TTS with voice: {voice} ({voice_info['name']}) [Real chunked streaming{',' if reference_text else ', no'} reference text]")
-
     chunk_count = 0
     total_bytes = 0
-    inference_start = time.time()
+    request_start = time.time()
+    first_chunk_time = None
     temp_files = []
 
     try:
@@ -412,12 +399,10 @@ async def async_streaming_generator(prompt: str, voice: str,
                 if len(raw_pcm) > 0:
                     chunk_count += 1
                     total_bytes += len(raw_pcm)
-                    chunk_end = time.time()
 
                     if chunk_count == 1:
-                        print(f"✓ First chunk latency: {chunk_end - inference_start:.3f}s")
+                        first_chunk_time = time.time() - request_start
 
-                    print(f"  Chunk {chunk_count} processed in {chunk_end - chunk_start:.3f}s ({len(raw_pcm):,} bytes)")
                     yield raw_pcm
 
             except asyncio.CancelledError:
@@ -448,8 +433,8 @@ async def async_streaming_generator(prompt: str, voice: str,
                     torch.cuda.empty_cache()
 
         if chunk_count > 0 and total_bytes > 0:
-            print(f"✓ Streaming complete. Total chunks: {chunk_count}, Total bytes: {total_bytes:,}")
-            print(f"Inference time: {time.time() - inference_start:.2f}s")
+            total_time = time.time() - request_start
+            print(f"✓ {voice}: TTFT={first_chunk_time:.3f}s Total={total_time:.2f}s Chunks={chunk_count} Bytes={total_bytes:,}")
 
     except Exception as e:
         print(f"✗ Error in streaming generator after {chunk_count} chunks: {e}")
