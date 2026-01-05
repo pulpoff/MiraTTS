@@ -70,15 +70,23 @@ class MiraTTSStreaming:
 
         for response in self.pipe.stream_infer([formatted_prompt], gen_config=self.gen_config, do_preprocess=False):
             iteration_count += 1
-            # Track new tokens added in this iteration
-            prev_length = len(accumulated_tokens)
-            accumulated_tokens = response.text
-            new_tokens = len(accumulated_tokens) - prev_length
-            tokens_since_decode += new_tokens
-            total_tokens_generated += new_tokens
 
-            if iteration_count <= 3 or iteration_count % 10 == 0:
-                print(f"🔍 Iter {iteration_count}: new_tokens={new_tokens}, total={total_tokens_generated}, accumulated_len={len(accumulated_tokens)}")
+            # LMDeploy stream_infer returns FULL accumulated text, but may be unstable
+            # Track growth properly by checking actual content
+            current_text = response.text
+
+            # Only update if we have more tokens than before
+            if len(current_text) > len(accumulated_tokens):
+                prev_length = len(accumulated_tokens)
+                accumulated_tokens = current_text
+                new_tokens = len(accumulated_tokens) - prev_length
+                tokens_since_decode += new_tokens
+                total_tokens_generated += new_tokens
+
+                if iteration_count <= 3 or iteration_count % 10 == 0:
+                    print(f"🔍 Iter {iteration_count}: new_tokens={new_tokens}, total={total_tokens_generated}, accumulated_len={len(accumulated_tokens)}")
+            elif iteration_count <= 3 or iteration_count % 10 == 0:
+                print(f"⚠️  Iter {iteration_count}: text shrunk or stayed same (current={len(current_text)}, accumulated={len(accumulated_tokens)})")
 
             should_decode = tokens_since_decode >= chunk_size or response.finish_reason is not None
 
