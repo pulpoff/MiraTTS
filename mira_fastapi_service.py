@@ -231,8 +231,10 @@ def process_audio_chunk_with_ffmpeg(wav_file_path, output_sample_rate=16000, tem
         return b''
 
 def generate_mira_audio(text: str, voice: str):
+    original_voice = voice
     if not validate_voice(voice):
-        raise ValueError(f"Voice '{voice}' is not available.")
+        voice = DEFAULT_VOICE
+        print(f"⚠️  Voice '{original_voice}' not found, falling back to default voice: {voice}")
 
     voice_info = AVAILABLE_VOICES[voice]
     reference_text = voice_info.get('reference_text')
@@ -293,16 +295,13 @@ async def generate_audio_endpoint(request: TTSRequest):
 
     try:
         if not request.voice:
-            raise HTTPException(
-                status_code=400,
-                detail="Voice parameter is required. Use /voices endpoint to see available voices."
-            )
+            request.voice = DEFAULT_VOICE
+            print(f"⚠️  No voice specified, using default voice: {request.voice}")
 
+        original_voice = request.voice
         if not validate_voice(request.voice):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Voice '{request.voice}' is not available. Use /voices endpoint to see available voices."
-            )
+            request.voice = DEFAULT_VOICE
+            print(f"⚠️  Voice '{original_voice}' not found, falling back to default voice: {request.voice}")
 
         raw_pcm = await asyncio.to_thread(
             run_non_streaming_inference,
@@ -343,8 +342,10 @@ async def async_streaming_generator(prompt: str, voice: str,
     global request_count
     request_count += 1
 
+    original_voice = voice
     if not validate_voice(voice):
-        raise ValueError(f"Voice '{voice}' is not available.")
+        voice = DEFAULT_VOICE
+        print(f"⚠️  Voice '{original_voice}' not found, falling back to default voice: {voice}")
 
     voice_info = AVAILABLE_VOICES[voice]
     reference_text = voice_info.get('reference_text')
@@ -450,16 +451,13 @@ async def async_streaming_generator(prompt: str, voice: str,
 async def generate_audio_stream_endpoint(request: TTSRequest):
     try:
         if not request.voice:
-            raise HTTPException(
-                status_code=400,
-                detail="Voice parameter is required. Use /voices endpoint to see available voices."
-            )
+            request.voice = DEFAULT_VOICE
+            print(f"⚠️  No voice specified, using default voice: {request.voice}")
 
+        original_voice = request.voice
         if not validate_voice(request.voice):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Voice '{request.voice}' is not available. Use /voices endpoint to see available voices."
-            )
+            request.voice = DEFAULT_VOICE
+            print(f"⚠️  Voice '{original_voice}' not found, falling back to default voice: {request.voice}")
 
         voice_info = AVAILABLE_VOICES[request.voice]
         return StreamingResponse(
