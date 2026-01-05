@@ -401,7 +401,9 @@ async def async_streaming_generator(prompt: str, voice: str,
                     temp_wav_path = f.name
                 temp_files.append(temp_wav_path)
 
-                await asyncio.to_thread(wav.write, temp_wav_path, MIRA_OUTPUT_SAMPLE_RATE, audio_chunk)
+                # Convert torch tensor to numpy array for scipy.io.wavfile.write
+                audio_numpy = audio_chunk.cpu().numpy() if hasattr(audio_chunk, 'cpu') else audio_chunk
+                await asyncio.to_thread(wav.write, temp_wav_path, MIRA_OUTPUT_SAMPLE_RATE, audio_numpy)
 
                 raw_pcm = await asyncio.to_thread(
                     process_audio_chunk_with_ffmpeg,
