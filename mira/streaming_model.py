@@ -60,10 +60,13 @@ class MiraTTSStreaming:
             reference_text: Transcript of reference audio
         """
         formatted_prompt = self.codec.format_prompt(text, context_tokens, reference_text)
+        print(f"🔍 DEBUG: Input text='{text[:50]}...' ref_text='{reference_text[:30] if reference_text else None}'")
+
         accumulated_tokens = ""
         previous_audio_length = 0
         tokens_since_decode = 0
         iteration_count = 0
+        total_tokens_generated = 0
 
         for response in self.pipe.stream_infer([formatted_prompt], gen_config=self.gen_config, do_preprocess=False):
             iteration_count += 1
@@ -72,6 +75,10 @@ class MiraTTSStreaming:
             accumulated_tokens = response.text
             new_tokens = len(accumulated_tokens) - prev_length
             tokens_since_decode += new_tokens
+            total_tokens_generated += new_tokens
+
+            if iteration_count <= 3 or iteration_count % 10 == 0:
+                print(f"🔍 Iter {iteration_count}: new_tokens={new_tokens}, total={total_tokens_generated}, accumulated_len={len(accumulated_tokens)}")
 
             should_decode = tokens_since_decode >= chunk_size or response.finish_reason is not None
 
@@ -88,14 +95,20 @@ class MiraTTSStreaming:
                             tokens_since_decode = 0
 
                             if new_audio.numel() > 0:
+                                print(f"✓ Yielding audio chunk: {new_audio.shape[0]} samples")
                                 yield new_audio
+                        else:
+                            print(f"⚠️  Audio not growing: current={current_length}, prev={previous_audio_length}")
+                    else:
+                        print(f"⚠️  Decoded audio is empty or invalid type")
                 except Exception as e:
                     print(f"⚠️  Decode error at iteration {iteration_count}: {e}")
                     continue
 
             if response.finish_reason is not None:
-                if iteration_count == 0 or len(accumulated_tokens) == 0:
-                    print(f"⚠️  Streaming ended with no tokens generated (iterations={iteration_count}, tokens={len(accumulated_tokens)})")
+                print(f"🏁 Stream finished: iterations={iteration_count}, total_tokens={total_tokens_generated}, finish_reason={response.finish_reason}")
+                if iteration_count == 0 or total_tokens_generated == 0:
+                    print(f"⚠️  Streaming ended with no tokens generated!")
                 break
 
     def batch_generate(self, prompts, context_tokens, reference_texts=None):
