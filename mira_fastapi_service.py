@@ -42,7 +42,7 @@ print(f"Using device: {device}")
 
 # --- Discover Voice Files ---
 def discover_voices() -> Dict:
-    """Scan directory for reference audio files (.wav, .mp3, .ogg)"""
+    """Scan directory for reference audio files (.wav, .mp3, .ogg) and their text transcripts"""
     voices = {}
 
     print(f"Scanning for reference audio files in {VOICES_DIR}...")
@@ -61,11 +61,26 @@ def discover_voices() -> Dict:
     for voice_path in audio_files:
         voice_id = voice_path.stem
 
+        # Look for corresponding text file
+        text_path = VOICES_DIR / f"{voice_id}.txt"
+        reference_text = None
+        has_text = False
+
+        if text_path.exists():
+            try:
+                with open(text_path, 'r', encoding='utf-8') as f:
+                    reference_text = f.read().strip()
+                has_text = True
+            except Exception as e:
+                print(f"⚠️  Warning: Could not read {text_path}: {e}")
+
         voices[voice_id] = {
             'name': voice_id.replace('_', ' ').title(),
             'path': str(voice_path),
             'format': voice_path.suffix[1:].upper(),
-            'file_size_mb': round(voice_path.stat().st_size / (1024 * 1024), 2)
+            'file_size_mb': round(voice_path.stat().st_size / (1024 * 1024), 2),
+            'reference_text': reference_text,
+            'has_reference_text': has_text
         }
 
     return dict(sorted(voices.items()))
@@ -257,7 +272,12 @@ def generate_mira_audio(text: str, voice: str):
         raise ValueError(f"Voice '{voice}' is not available.")
 
     voice_info = AVAILABLE_VOICES[voice]
-    print(f"Generating audio with voice: {voice} ({voice_info['name']})")
+    reference_text = voice_info.get('reference_text')
+
+    if reference_text:
+        print(f"Generating audio with voice: {voice} ({voice_info['name']}) [with reference text]")
+    else:
+        print(f"Generating audio with voice: {voice} ({voice_info['name']}) [no reference text]")
 
     # Track voice usage
     global voice_usage_stats
@@ -266,8 +286,8 @@ def generate_mira_audio(text: str, voice: str):
     # Get context tokens (cached)
     context_tokens = get_voice_context(voice)
 
-    # Generate audio
-    audio_tensor = MIRA_TTS.generate(text, context_tokens)
+    # Generate audio with reference text
+    audio_tensor = MIRA_TTS.generate(text, context_tokens, reference_text=reference_text)
 
     # Convert tensor to numpy array
     if isinstance(audio_tensor, torch.Tensor):
@@ -397,7 +417,12 @@ async def async_streaming_generator(prompt: str, voice: str,
         raise ValueError(f"Voice '{voice}' is not available.")
 
     voice_info = AVAILABLE_VOICES[voice]
-    print(f"Streaming TTS with voice: {voice} ({voice_info['name']}) [Real chunked streaming]")
+    reference_text = voice_info.get('reference_text')
+
+    if reference_text:
+        print(f"Streaming TTS with voice: {voice} ({voice_info['name']}) [Real chunked streaming, with reference text]")
+    else:
+        print(f"Streaming TTS with voice: {voice} ({voice_info['name']}) [Real chunked streaming, no reference text]")
 
     chunk_count = 0
     total_bytes = 0
@@ -410,7 +435,7 @@ async def async_streaming_generator(prompt: str, voice: str,
 
         # Generate audio chunks from MiraTTS using real token-level streaming
         async for audio_chunk in asyncio_wrap_generator(
-            MIRA_TTS.stream_generate(prompt, context_tokens, chunk_size=STREAMING_CHUNK_SIZE)
+            MIRA_TTS.stream_generate(prompt, context_tokens, chunk_size=STREAMING_CHUNK_SIZE, reference_text=reference_text)
         ):
             i = chunk_count
             if audio_chunk is None or audio_chunk.size == 0:

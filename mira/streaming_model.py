@@ -59,14 +59,20 @@ class MiraTTSStreaming:
         context_tokens = self.codec.encode(audio_file)
         return context_tokens
 
-    def generate(self, text, context_tokens):
-        """Generates speech from input text (non-streaming)"""
-        formatted_prompt = self.codec.format_prompt(text, context_tokens, None)
+    def generate(self, text, context_tokens, reference_text=None):
+        """Generates speech from input text (non-streaming)
+
+        Args:
+            text (str): Text to synthesize
+            context_tokens: Encoded reference audio tokens
+            reference_text (str, optional): Transcript of reference audio for better voice cloning
+        """
+        formatted_prompt = self.codec.format_prompt(text, context_tokens, reference_text)
         response = self.pipe([formatted_prompt], gen_config=self.gen_config, do_preprocess=False)
         audio = self.codec.decode(response[0].text, context_tokens)
         return audio
 
-    def stream_generate(self, text, context_tokens, chunk_size=50):
+    def stream_generate(self, text, context_tokens, chunk_size=50, reference_text=None):
         """
         Generates speech from input text with streaming.
 
@@ -76,11 +82,12 @@ class MiraTTSStreaming:
             chunk_size (int): Number of tokens to accumulate before decoding
                              Smaller = lower latency, more overhead
                              Larger = higher latency, more efficient
+            reference_text (str, optional): Transcript of reference audio for better voice cloning
 
         Yields:
             torch.Tensor: Audio chunks as they're generated
         """
-        formatted_prompt = self.codec.format_prompt(text, context_tokens, None)
+        formatted_prompt = self.codec.format_prompt(text, context_tokens, reference_text)
 
         # Track token accumulation
         accumulated_tokens = ""
@@ -127,17 +134,21 @@ class MiraTTSStreaming:
             if response.finish_reason is not None:
                 break
 
-    def batch_generate(self, prompts, context_tokens):
+    def batch_generate(self, prompts, context_tokens, reference_texts=None):
         """
         Generates speech from text, for larger batch size
 
         Args:
             prompts (list): Input for tts model, list of prompts
             context_tokens (list): List of context tokens respective to prompts
+            reference_texts (list, optional): List of reference texts respective to prompts
         """
+        if reference_texts is None:
+            reference_texts = [None] * len(prompts)
+
         formatted_prompts = []
-        for prompt, context_token in zip(prompts, cycle(context_tokens)):
-            formatted_prompt = self.codec.format_prompt(prompt, context_token, None)
+        for prompt, context_token, ref_text in zip(prompts, cycle(context_tokens), cycle(reference_texts)):
+            formatted_prompt = self.codec.format_prompt(prompt, context_token, ref_text)
             formatted_prompts.append(formatted_prompt)
 
         responses = self.pipe(formatted_prompts, gen_config=self.gen_config, do_preprocess=False)

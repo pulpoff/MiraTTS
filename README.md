@@ -49,14 +49,18 @@ mira_tts = MiraTTS('YatharthS/MiraTTS')
 # Reference audio file (clone this voice)
 reference_file = "ref/john.wav"  # Can be mp3/wav/ogg or anything librosa supports
 
+# Reference text (transcript of reference audio) - IMPORTANT for voice cloning!
+# This is what was actually said in john.wav
+reference_text = "Hello, my name is John and I'm demonstrating voice cloning."
+
 # Text to synthesize
 text = "Alright, so have you ever heard of a little thing named text to speech? Well, it allows you to convert text into speech! I know, that's super cool, isn't it?"
 
 # Encode reference audio
 context_tokens = mira_tts.encode_audio(reference_file)
 
-# Generate speech
-audio = mira_tts.generate(text, context_tokens)
+# Generate speech with reference text for better cloning
+audio = mira_tts.generate(text, context_tokens, reference_text=reference_text)
 
 # Play or save
 Audio(audio, rate=48000)
@@ -70,8 +74,9 @@ import scipy.io.wavfile as wav
 # Initialize streaming model
 mira_tts = MiraTTSStreaming('YatharthS/MiraTTS')
 
-# Reference audio
+# Reference audio and text
 reference_file = "ref/daniel.wav"
+reference_text = "Hi, I'm Daniel. This is my voice sample for cloning."
 context_tokens = mira_tts.encode_audio(reference_file)
 
 # Text to synthesize
@@ -79,7 +84,7 @@ text = "This is streaming generation. You'll get audio chunks as they're generat
 
 # Generate with streaming (yields chunks as tokens are produced)
 chunks = []
-for audio_chunk in mira_tts.stream_generate(text, context_tokens, chunk_size=50):
+for audio_chunk in mira_tts.stream_generate(text, context_tokens, chunk_size=50, reference_text=reference_text):
     chunks.append(audio_chunk.cpu().numpy())
     # Process each chunk immediately (e.g., stream to client, play audio, etc.)
     print(f"Received chunk: {len(audio_chunk)} samples")
@@ -288,23 +293,34 @@ curl http://localhost:5100/health
 
 ### Reference Audio Files
 
-Place your reference audio files in the `ref/` directory:
+Place your reference audio files in the `ref/` directory along with their text transcripts:
 
 ```
 ref/
 ├── john.wav      # Male voice sample
+├── john.txt      # Transcript of john.wav (IMPORTANT for voice cloning!)
 ├── daniel.wav    # Another male voice
+├── daniel.txt    # Transcript of daniel.wav
 ├── sarah.wav     # Female voice sample
+├── sarah.txt     # Transcript of sarah.wav
 └── emma.wav      # Another female voice
+└── emma.txt      # Transcript of emma.wav
 ```
+
+**Reference Text Files (IMPORTANT!):**
+- Each `.wav` file should have a corresponding `.txt` file with the same name
+- The `.txt` file contains the exact transcript of what's said in the audio
+- This significantly improves voice cloning quality
+- Example: If `john.wav` contains "Hello, my name is John", then `john.txt` should contain: `Hello, my name is John`
 
 **Tips for best results:**
 - Use 3-10 seconds of clean, clear speech
 - Single speaker recordings work best
 - Avoid background noise
+- **Always provide reference text** for better cloning quality
 - Supported formats: WAV, MP3, OGG, FLAC, M4A
 
-The voice ID is the filename without extension (e.g., `ref/john.wav` → voice ID: `john`)
+The voice ID is the filename without extension (e.g., `ref/john.wav` + `ref/john.txt` → voice ID: `john`)
 
 ## API Request Format
 
