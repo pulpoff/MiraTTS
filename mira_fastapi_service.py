@@ -1,6 +1,9 @@
+import os
+# Suppress ONNX Runtime warnings BEFORE any imports that load onnxruntime
+os.environ['ORT_LOGGING_LEVEL'] = '3'
+
 import logging
 import time
-import os
 import tempfile
 import subprocess
 import gc
@@ -25,7 +28,6 @@ logging.basicConfig(level=logging.ERROR)
 logging.getLogger('lmdeploy').setLevel(logging.ERROR)
 logging.getLogger('transformers').setLevel(logging.ERROR)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['ORT_LOGGING_LEVEL'] = '3'  # Suppress ONNX Runtime warnings
 
 # Configure HF cache to persist downloads
 os.environ['HF_HOME'] = os.environ.get('HF_HOME', '/tmp/huggingface_cache')
