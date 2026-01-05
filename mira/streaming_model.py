@@ -8,14 +8,13 @@ from mira.utils import clear_cache
 class MiraTTSStreaming:
     """MiraTTS with real chunked streaming via LMDeploy stream_infer"""
 
-    def __init__(self, model_dir="YatharthS/MiraTTS", tp=1, enable_prefix_caching=True, cache_max_entry_count=0.2, dtype='float16'):
-        # Use TurboMind for proper streaming support (PyTorch backend has broken stream_infer)
+    def __init__(self, model_dir="YatharthS/MiraTTS", tp=1, enable_prefix_caching=True, cache_max_entry_count=0.2, dtype='bfloat16'):
+        # Use TurboMind backend with same config as base MiraTTS class
         backend_config = TurbomindEngineConfig(
             cache_max_entry_count=cache_max_entry_count,
             tp=tp,
             dtype=dtype,
-            enable_prefix_caching=enable_prefix_caching,
-            model_format='hf'  # Force HuggingFace format for better compatibility
+            enable_prefix_caching=enable_prefix_caching
         )
         self.pipe = pipeline(model_dir, backend_config=backend_config)
         self.gen_config = GenerationConfig(
