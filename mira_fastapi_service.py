@@ -28,7 +28,7 @@ DEFAULT_SPEED = 1.0
 MIRA_OUTPUT_SAMPLE_RATE = 48000
 STREAMING_CHUNK_SIZE = 50
 
-VOICES_DIR = Path("/ref") if Path("/ref").exists() else Path("./ref")
+VOICES_DIR = Path("/voices") if Path("/voices").exists() else Path("./voices")
 print(f"Using voice directory: {VOICES_DIR.absolute()}")
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'

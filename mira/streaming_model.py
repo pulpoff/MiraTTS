@@ -9,6 +9,12 @@ class MiraTTSStreaming:
     """MiraTTS with real chunked streaming via LMDeploy stream_infer"""
 
     def __init__(self, model_dir="YatharthS/MiraTTS", tp=1, enable_prefix_caching=True, cache_max_entry_count=0.2, dtype='float16'):
+        import torch.multiprocessing as mp
+        try:
+            mp.set_start_method('spawn', force=True)
+        except RuntimeError:
+            pass
+
         backend_config = PytorchEngineConfig(
             cache_max_entry_count=cache_max_entry_count,
             tp=tp,

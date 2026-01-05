@@ -87,7 +87,7 @@ from IPython.display import Audio
 mira_tts = MiraTTS('YatharthS/MiraTTS')
 
 # Reference audio file (clone this voice)
-reference_file = "ref/john.wav"  # Can be mp3/wav/ogg or anything librosa supports
+reference_file = "voices/john.wav"  # Can be mp3/wav/ogg or anything librosa supports
 
 # Reference text (transcript of reference audio) - IMPORTANT for voice cloning!
 # This is what was actually said in john.wav
@@ -115,7 +115,7 @@ import scipy.io.wavfile as wav
 mira_tts = MiraTTSStreaming('YatharthS/MiraTTS')
 
 # Reference audio and text
-reference_file = "ref/daniel.wav"
+reference_file = "voices/daniel.wav"
 reference_text = "Hi, I'm Daniel. This is my voice sample for cloning."
 context_tokens = mira_tts.encode_audio(reference_file)
 
@@ -145,7 +145,7 @@ texts = [
     "Honestly, this is really interesting, isn't it?"
 ]
 
-reference_file = "ref/john.wav"
+reference_file = "voices/john.wav"
 context_tokens = [mira_tts.encode_audio(reference_file)]
 
 # Generate all at once
@@ -159,9 +159,9 @@ Audio(audio, rate=48000)
 #### Starting the Service
 
 ```bash
-# Place reference audio files in the ref directory
-mkdir -p ref
-cp your_voice_samples/*.wav ref/
+# Place reference audio files in the voices directory
+mkdir -p voices
+cp your_voice_samples/*.wav voices/
 
 # Start the service
 python mira_fastapi_service.py
@@ -333,10 +333,10 @@ curl http://localhost:5100/health
 
 ### Reference Audio Files
 
-Place your reference audio files in the `ref/` directory along with their text transcripts:
+Place your reference audio files in the `voices/` directory along with their text transcripts:
 
 ```
-ref/
+voices/
 ├── john.wav      # Male voice sample
 ├── john.txt      # Transcript of john.wav (IMPORTANT for voice cloning!)
 ├── daniel.wav    # Another male voice
@@ -360,7 +360,7 @@ ref/
 - **Always provide reference text** for better cloning quality
 - Supported formats: WAV, MP3, OGG, FLAC, M4A
 
-The voice ID is the filename without extension (e.g., `ref/john.wav` + `ref/john.txt` → voice ID: `john`)
+The voice ID is the filename without extension (e.g., `voices/john.wav` + `voices/john.txt` → voice ID: `john`)
 
 ## API Request Format
 
