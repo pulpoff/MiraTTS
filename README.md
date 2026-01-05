@@ -4,11 +4,13 @@
 
 This repository heavily optimizes MiraTTS with [LMDeploy](https://github.com/InternLM/lmdeploy) and boosts quality by using [FlashSR](https://github.com/ysharma3501/FlashSR) to generate high quality audio at over **100x** realtime!
 
-**🆕 v2.0 Features:**
-- ✨ **Real chunked streaming** with token-level granularity (100-200ms first chunk latency)
-- 🚀 **FastAPI service** with Kokoro TTS-compatible API
-- 🎙️ **Voice cloning** via reference audio files
-- ⚡ **Low latency** streaming similar to commercial TTS services
+**Live Demo:** Try the streaming TTS demo at [https://callagent.pro](https://callagent.pro) - All voices from this repository can be used directly inside the callagent.pro system for AI voice agents.
+
+**v2.0 Features:**
+- **Real chunked streaming** with token-level granularity (100-200ms first chunk latency)
+- **FastAPI service** with Kokoro TTS-compatible API
+- **Voice cloning** via reference audio files
+- **Low latency** streaming similar to commercial TTS services
 
 https://github.com/user-attachments/assets/262088ae-068a-49f2-8ad6-ab32c66dcd17
 
@@ -265,13 +267,13 @@ def stream_and_play(text, voice="john"):
         if chunk:
             if first_chunk:
                 latency = (time.time() - start_time) * 1000
-                print(f"✓ First chunk in {latency:.0f}ms - Audio playing!")
+                print(f"First chunk in {latency:.0f}ms - Audio playing!")
                 first_chunk = False
             stream.write(chunk)
 
     stream.close()
     p.terminate()
-    print("✓ Streaming complete")
+    print("Streaming complete")
 
 # Usage - Audio starts playing in ~100-200ms!
 stream_and_play("This is real-time streaming with minimal latency!")
@@ -421,8 +423,8 @@ Released training code! You can now train the model to be multilingual, multi-sp
 
 - [x] Release code and model
 - [x] Release training code
-- [x] **Support low latency streaming** ✨ **NEW in v2.0!**
-- [x] **FastAPI service with real chunked streaming** ✨ **NEW in v2.0!**
+- [x] **Support low latency streaming** (NEW in v2.0)
+- [x] **FastAPI service with real chunked streaming** (NEW in v2.0)
 - [ ] Release native 48kHz bicodec
 - [ ] GPU-accelerated codec decoding
 - [ ] Multi-request batching
@@ -493,7 +495,7 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 
 Thanks very much to the authors of Spark-TTS and unsloth. Thanks for checking out this repository as well.
 
-Stars would be well appreciated, thank you! ⭐
+Stars would be well appreciated, thank you!
 
 ## Contact
 
