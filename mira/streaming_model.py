@@ -109,7 +109,6 @@ class MiraTTSStreaming:
 
         try:
             # Attempt token-level streaming with PyTorch backend
-            print(f"🔄 Starting token-level streaming with PyTorch backend...")
             accumulated_tokens = []
             token_count = 0
             chunk_yield_count = 0
@@ -122,10 +121,6 @@ class MiraTTSStreaming:
                     accumulated_tokens.append(token_text)
                     token_count += 1
 
-                    # Log progress every 10 tokens
-                    if token_count % 10 == 0:
-                        print(f"  📊 Accumulated {token_count} tokens...")
-
                     # Decode every chunk_size tokens
                     if token_count >= chunk_size:
                         full_token_sequence = ''.join(accumulated_tokens)
@@ -137,7 +132,6 @@ class MiraTTSStreaming:
 
                                 if isinstance(audio, torch.Tensor) and audio.numel() > 0:
                                     chunk_yield_count += 1
-                                    print(f"  ✓ Yielded chunk #{chunk_yield_count} ({token_count} tokens, {audio.numel()} samples)")
                                     yield audio.flatten()
                                     accumulated_tokens = []
                                     token_count = 0
@@ -153,16 +147,13 @@ class MiraTTSStreaming:
                         audio = self.codec.decode(full_token_sequence, context_tokens)
                         if isinstance(audio, torch.Tensor) and audio.numel() > 0:
                             chunk_yield_count += 1
-                            print(f"  ✓ Yielded final chunk #{chunk_yield_count} ({token_count} remaining tokens, {audio.numel()} samples)")
                             yield audio.flatten()
                     except Exception as e:
-                        print(f"⚠️  Failed to decode final tokens: {e}")
-
-            print(f"✅ Token-level streaming completed: {chunk_yield_count} audio chunks yielded")
+                        print(f"WARNING: Failed to decode final tokens: {e}")
 
         except Exception as e:
-            print(f"⚠️  Token-level streaming failed: {e}")
-            print(f"📋 Falling back to text chunking approach...")
+            print(f"WARNING: Token-level streaming failed: {e}")
+            print(f"INFO: Falling back to text chunking approach")
 
             # Fallback: text chunking approach (MeloTTS-style)
             text_chunks = self.split_text_into_chunks(text, max_chunk_length=25)
@@ -178,7 +169,7 @@ class MiraTTSStreaming:
                 audio = self.codec.decode(generated_text, context_tokens)
 
                 if not isinstance(audio, torch.Tensor) or audio.numel() == 0:
-                    print(f"⚠️  Chunk {i+1}: No audio generated")
+                    print(f"WARNING: Chunk {i+1}: No audio generated")
                     continue
 
                 yield audio.flatten()
