@@ -39,7 +39,7 @@ TEMPO_FACTOR = 1.1
 MASTER_VOLUME_GAIN = 0.8
 DEFAULT_SPEED = 1.0
 MIRA_OUTPUT_SAMPLE_RATE = 48000
-STREAMING_CHUNK_SIZE = 150  # Characters per text chunk (MeloTTS-style)
+STREAMING_CHUNK_SIZE = 40  # Characters per chunk - smaller for lower TTFT (target: 100-200ms)
 
 VOICES_DIR = Path("/voices") if Path("/voices").exists() else Path("./voices")
 print(f"Using voice directory: {VOICES_DIR.absolute()}")
@@ -467,7 +467,9 @@ async def async_streaming_generator(prompt: str, voice: str,
         if chunk_count > 0 and total_bytes > 0:
             total_time = time.time() - request_start
             audio_duration_sec = total_bytes / (FINAL_SAMPLE_RATE * 2)  # 16kHz, 16-bit = 2 bytes per sample
-            print(f"✓ {voice}: TTFT={first_chunk_time:.3f}s Total={total_time:.2f}s Audio={audio_duration_sec:.2f}s Chunks={chunk_count} Bytes={total_bytes:,}")
+            # Truncate text for readability
+            text_preview = prompt[:60] + "..." if len(prompt) > 60 else prompt
+            print(f"✓ {voice}: \"{text_preview}\" TTFT={first_chunk_time:.3f}s Total={total_time:.2f}s Audio={audio_duration_sec:.2f}s Chunks={chunk_count} Bytes={total_bytes:,}")
         else:
             print(f"⚠️  {voice}: No audio generated! Input text may be empty or encoding failed.")
 
